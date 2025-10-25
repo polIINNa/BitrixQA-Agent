@@ -32,5 +32,12 @@ class BitrixQAContext(BaseModel):
             }
         ).chat_model)
 
-    articles_metadata_path = Path(__file__).parent / "qa_data" / "opensource_articles" / "articles_metadata.json"
-    articles_files_path = Path(__file__).parent / "qa_data" / "opensource_articles" / "content"
+    articles_metadata_path: Path = Field(
+        description="Путь до метаданных статей из документации",
+        default_factory=lambda: Path(__file__).parent / "qa_data" / "opensource_articles" / "articles_metadata.json"
+    )
+    articles_files_path: Path = Field(
+        description="Путь до хранилище с файлами со статьями",
+        default_factory=lambda: Path(__file__).parent / "qa_data" / "opensource_articles" / "content"
+    )
+    articles_batch_size: int = Field(description="Размер батча для количества статей в одном промпте", default=10)

@@ -13,12 +13,14 @@ async def get_relevant_articles_ids_batch(state: GetRelevantArticlesState, runti
     """Получить релевантные статьи из батча"""
 
     context = runtime.context or BitrixQAContext()
-    relevant_articles_ids = (await choose_article_chain(context.model).ainvoke({
+    relevant_articles_ids_result = (await choose_article_chain(context.model).ainvoke({
         "articles_metadata": state.articles_metadata,
         "query": state.query
     })).relevant_articles_ids
 
-    return {"relevant_articles_ids": [str(_id) for _id in relevant_articles_ids]}
+    if relevant_articles_ids_result is not None:
+        relevant_articles_ids = [str(_id) for _id in relevant_articles_ids_result]
+        return {"relevant_articles_ids": relevant_articles_ids}
 
 get_relevant_articles_ids_batch.__graphname__ = "Получить IDs релевантных статей"
 
@@ -29,7 +31,7 @@ async def continue_to_get_relevant_articles_ids(state: BitrixQAState, runtime: R
     context = runtime.context or BitrixQAContext()
     with open(context.articles_metadata_path, "r", encoding="utf-8") as f:
         articles_metadata = json.load(f)
-    article_batches = get_article_batches(articles_metadata)
+    article_batches = get_article_batches(articles_metadata=articles_metadata, batch_size=context.articles_batch_size)
 
     return [
         Send(
@@ -50,7 +52,7 @@ async def form_context(state: BitrixQAState, runtime: Runtime[BitrixQAContext]):
 
     for _id, metadata in articles_metadata.items():
         if _id in state.relevant_articles_ids:
-            with open(f"{context.articles_files_path} / {metadata['article_filename']}", "r", encoding="utf-8") as f:
+            with open(f"{context.articles_files_path}/{metadata['article_filename']}", "r", encoding="utf-8") as f:
                 article_content = f.read()
             sections_article_content = get_sections_content(article_content=article_content)
             rag_context.append(sections_article_content)
@@ -67,3 +69,5 @@ async def generate_answer(state: BitrixQAState, runtime: Runtime[BitrixQAContext
     answer = await generate_answer_chain(context.model).ainvoke({"context": state.context, "query": state.query})
 
     return {"answer": answer}
+
+generate_answer.__graphname__ = "Сгенерировать ответ на вопрос"

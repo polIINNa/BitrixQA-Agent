@@ -1,13 +1,13 @@
 
 
-def get_article_batches(articles_metadata: dict[str, dict]) -> list[str]:
+def get_article_batches(articles_metadata: dict[str, dict], batch_size: int = 10) -> list[str]:
     """Получить список батчей с данными по статьям"""
 
     article_batches = []
     batch = []
     for _id in articles_metadata:
         batch.append(f"ID статьи: {_id}\nТема: {articles_metadata[_id]['title']}\nПроблема: {articles_metadata[_id]['problem']}")
-        if len(batch) == 10:
+        if len(batch) == batch_size:
             formatted_batch = "\n\n".join(batch)
             article_batches.append(formatted_batch)
             batch = []

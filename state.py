@@ -8,8 +8,8 @@ class BitrixQAState(BaseModel):
     """Основное состояние графа"""
     query: str = Field(description="Вопрос пользователя")
     relevant_articles_ids: Annotated[list[str], operator.add] = Field(description="IDs релевантных статей")
-    context: str = Field(description="Контекст для ответа на вопрос")
-    answer: str = Field(description="Ответ на вопрос")
+    context: str | None = Field(description="Контекст для ответа на вопрос", default=None)
+    answer: str | None = Field(description="Ответ на вопрос", default=None)
 
 
 class GetRelevantArticlesState(BaseModel):

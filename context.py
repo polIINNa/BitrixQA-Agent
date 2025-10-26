@@ -28,7 +28,8 @@ class BitrixQAContext(BaseModel):
             model="google/gemini-2.5-flash-lite",
             kwargs={
                 "api_key": os.getenv("OPENROUTER_API_KEY"),
-                "base_url":"https://openrouter.ai/api/v1"
+                "base_url":"https://openrouter.ai/api/v1",
+                "temperature": 0
             }
         ).chat_model)
 

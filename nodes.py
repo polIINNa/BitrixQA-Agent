@@ -1,12 +1,42 @@
 import json
 
 from langgraph.runtime import Runtime
-from langgraph.types import Send
+from langgraph.types import Send, interrupt
+from langchain_core.messages import HumanMessage, AIMessage
 
 from context import BitrixQAContext
-from chains import choose_article_chain, generate_answer_chain
 from state import BitrixQAState, GetRelevantArticlesState
 from utils import get_article_batches, get_sections_content
+from chains import choose_article_chain, generate_answer_chain, llm_chat_chain, classify_message_chain
+
+
+async def classify_message_type(state: BitrixQAState, runtime: Runtime[BitrixQAContext]):
+    """Получить тип сообщения пользователя"""
+
+    context = runtime.context or BitrixQAContext()
+    message_type = (await classify_message_chain(context.model).ainvoke({"user_message": state.query})).type
+
+    return {"user_message_type": message_type}
+
+classify_message_type.__graphname__ = "Получить тип сообщения пользователя"
+
+
+async def llm_chat(state: BitrixQAState, runtime: Runtime[BitrixQAContext]):
+    """Сгенерировать ответ на сообщение пользователя, без контекста, простой ответ"""
+
+    context = runtime.context or BitrixQAContext()
+    answer = await llm_chat_chain(context.model).ainvoke({"user_message": state.query})
+
+    return {"answer": answer, "messages": AIMessage(content=answer)}
+
+llm_chat.__graphname__ = "Получить простой ответ на сообщение, просто чат без QA"
+
+
+async def qa_node(state: BitrixQAState):
+    """Промежуточная нода для перехода к части с QA и Send"""
+    return state
+
+qa_node.__graphname__ = "Нода для перехода к Send"
 
 
 async def get_relevant_articles_ids_batch(state: GetRelevantArticlesState, runtime: Runtime[BitrixQAContext]):
@@ -68,6 +98,16 @@ async def generate_answer(state: BitrixQAState, runtime: Runtime[BitrixQAContext
     context = runtime.context or BitrixQAContext()
     answer = await generate_answer_chain(context.model).ainvoke({"context": state.context, "query": state.query})
 
-    return {"answer": answer}
+    return {"answer": answer, "messages": AIMessage(content=answer)}
 
 generate_answer.__graphname__ = "Сгенерировать ответ на вопрос"
+
+
+async def user_node(state: BitrixQAState):
+    """Нода для получения сообщения от пользователя"""
+
+    message_to_user = interrupt(state.answer)
+
+    return {"messages": [HumanMessage(content=message_to_user)]}
+
+user_node.__graphname__ = "Отправить ответ пользователю (ожидание ответа от него)"

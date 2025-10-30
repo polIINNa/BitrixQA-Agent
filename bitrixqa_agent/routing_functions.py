@@ -1,4 +1,4 @@
-from state import BitrixQAState
+from bitrixqa_agent.state import BitrixQAState
 
 
 async def message_type_routing(state: BitrixQAState):

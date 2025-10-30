@@ -1,14 +1,16 @@
 from langgraph.graph import StateGraph
+from psycopg_pool import AsyncConnectionPool
 from langgraph.constants import START, END
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-from state import BitrixQAState
-from context import BitrixQAContext
-from nodes import (
+from bitrixqa_agent.state import BitrixQAState
+from bitrixqa_agent.context import BitrixQAContext
+from bitrixqa_agent.nodes import (
     get_relevant_articles_ids_batch, form_context, generate_answer, continue_to_get_relevant_articles_ids,
     classify_message_type, llm_chat, user_node, qa_node
 )
-from routing_functions import message_type_routing
+from bitrixqa_agent.routing_functions import message_type_routing
 
 builder = StateGraph(BitrixQAState, context_schema=BitrixQAContext)
 
@@ -48,7 +50,13 @@ builder.add_edge(llm_chat.__graphname__, user_node.__graphname__)
 builder.add_edge(user_node.__graphname__, classify_message_type.__graphname__)
 
 def get_simple_graph():
+    """Создать простой граф без памяти"""
     return builder.compile()
 
 def get_graph_with_inmemory_checkpoint():
+    """Создать граф с InMemorySaver"""
     return builder.compile(checkpointer=InMemorySaver())
+
+def get_graph_with_postgresql_checkpoint(connection_pool: AsyncConnectionPool):
+    "Создать граф с PostreSQL"
+    return builder.compile(checkpointer=AsyncPostgresSaver(connection_pool))

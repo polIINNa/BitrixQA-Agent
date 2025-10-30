@@ -4,10 +4,10 @@ from langgraph.runtime import Runtime
 from langgraph.types import Send, interrupt
 from langchain_core.messages import HumanMessage, AIMessage
 
-from context import BitrixQAContext
-from state import BitrixQAState, GetRelevantArticlesState
-from utils import get_article_batches, get_sections_content
-from chains import choose_article_chain, generate_answer_chain, llm_chat_chain, classify_message_chain
+from bitrixqa_agent.context import BitrixQAContext
+from bitrixqa_agent.state import BitrixQAState, GetRelevantArticlesState
+from bitrixqa_agent.utils import get_article_batches, get_sections_content
+from bitrixqa_agent.chains import choose_article_chain, generate_answer_chain, llm_chat_chain, classify_message_chain
 
 
 async def classify_message_type(state: BitrixQAState, runtime: Runtime[BitrixQAContext]):

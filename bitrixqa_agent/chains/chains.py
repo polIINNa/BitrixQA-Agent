@@ -1,8 +1,8 @@
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import Runnable
 from langchain_core.language_models import BaseChatModel
+from langchain_core.output_parsers import StrOutputParser
 
-from chains.prompts import (
+from bitrixqa_agent.chains.prompts import (
     choose_article_prompt, ArticleRelevantIDS, generate_answer_prompt,
     message_type_classification_prompt, MessageTypeClassification, llm_chat_prompt
 )

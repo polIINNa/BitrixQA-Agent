@@ -1,9 +1,9 @@
 import operator
 from typing import Annotated
+from pydantic import BaseModel, Field
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
-from pydantic import BaseModel, Field
 
 
 class BitrixQAState(BaseModel):

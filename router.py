@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from psycopg_pool import AsyncConnectionPool
 from langchain_core.messages import HumanMessage
 
+from bitrixqa_agent.state import InputState
 from bitrixqa_agent.context import BitrixQAContext
 from bitrixqa_agent.graph import get_graph_with_inmemory_checkpoint, get_graph_with_postgresql_checkpoint
 
@@ -17,13 +18,15 @@ async def get_answer(query: str, thread_id: str) -> str:
         context = BitrixQAContext()
         bitrix_qa_graph = get_graph_with_postgresql_checkpoint(connection_pool=connection_pool)
         config = {"configurable": {"thread_id": thread_id}}
+        _input = InputState(query=query, messages=[HumanMessage(content=query)])
+
         result = await bitrix_qa_graph.ainvoke(
-            input={"query": query, "messages": HumanMessage(content=query)},
+            input=_input,
             context=context,
             config=config
         )
     print(result)
-    if "answer" in result:
+    if result["user_message_type"] == "small_talk" or result["user_message_type"] == "knowledge_question":
         return result["answer"]
     elif result["user_message_type"] == "objection":
         return "need_human"

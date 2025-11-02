@@ -13,9 +13,15 @@ async def bot_handler(message: dict):
     answer = await get_answer(query=query, thread_id=thread_id)
     return answer
 
+queries = [
+    "Как перенести данные из Экселя в Битрикс?",
+    "Как распечатать страницу из Битрикса?",
+    "А распечатать страницу оттуда?",
+    "Какой есть функционал в профиле сотрудника?"
+]
 message = {
-    "FROM_USER_ID": "1",
-    "DIALOG_ID": "1",
-    "MESSAGE": "Неет, речь не о вопросах про битрикс. На какие мои вопросы в этом чате вы смогли ответили?"
+    "FROM_USER_ID": "5",
+    "DIALOG_ID": "3",
+    "MESSAGE": "Как перенести данные из Экселя в Битрикс?"
 }
 print(asyncio.run(bot_handler(message)))

@@ -39,6 +39,6 @@ class BitrixQAContext(BaseModel):
     )
     articles_files_path: Path = Field(
         description="Путь до хранилище с файлами со статьями",
-        default_factory=lambda: Path(__file__).parent / "qa_data" / "opensource_articles" / "content"
+        default_factory=lambda: Path(__file__).parent / "qa_data" / "opensource_articles" / "source_content"
     )
     articles_batch_size: int = Field(description="Размер батча для количества статей в одном промпте", default=10)

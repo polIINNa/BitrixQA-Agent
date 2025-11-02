@@ -4,7 +4,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 from bitrixqa_agent.chains.prompts import (
     choose_article_prompt, ArticleRelevantIDS, generate_answer_prompt,
-    message_type_classification_prompt, MessageTypeClassification, llm_chat_prompt
+    message_type_classification_prompt, MessageTypeClassification, llm_chat_prompt, prepare_query_prompt
 )
 
 
@@ -26,3 +26,7 @@ def classify_message_chain(model: BaseChatModel) -> Runnable:
 def llm_chat_chain(model: BaseChatModel) -> Runnable:
     """Цепочка для получения простого чата, не для ответа по QA"""
     return llm_chat_prompt | model | StrOutputParser()
+
+def prepare_query_chain(model: BaseChatModel) -> Runnable:
+    """Цепочка для получения ответа на вопрос пользователя"""
+    return prepare_query_prompt | model | StrOutputParser()

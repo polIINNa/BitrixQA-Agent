@@ -9,9 +9,29 @@ from bitrixqa_agent.context import BitrixQAContext
 from bitrixqa_agent.state import BitrixQAState, RAGState
 from bitrixqa_agent.utils import get_article_batches, get_sections_content
 from bitrixqa_agent.chains import (
-    choose_article_chain, generate_answer_chain, llm_chat_chain, classify_message_chain, prepare_query_chain
+    choose_article_chain, generate_answer_chain, admin_answer_chain, classify_message_chain, prepare_query_chain
 )
 
+
+async def admin_node(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) -> BitrixQAState:
+    """Просто ответить на сообщение пользователя в режиме чата"""
+    context = runtime.context or BitrixQAContext()
+    chat_history = "\n".join(f"{msg.type}: {msg.content}" for msg in state.messages[:-1])
+    last_user_message = state.messages[-1].content
+    if state.user_message_type == "small_talk":
+        answer = "нет"
+    if state.user_message_type == "knowledge_question":
+        answer = state.answer
+    answer = await admin_answer_chain(context.model).ainvoke(
+        {
+            "chat_history": chat_history,
+            "last_user_message": last_user_message,
+            "raw_answer": answer
+        }
+    )
+    return {"answer": answer, "messages": AIMessage(content=answer)}
+
+admin_node.__graphname__ = "Ответить на сообщение пользователя в режиме чат"
 
 async def prepare_query(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) -> BitrixQAState:
     """Получить текущий запрос пользователя из истории сообщений"""
@@ -38,14 +58,6 @@ async def classify_message_type(state: BitrixQAState, runtime: Runtime[BitrixQAC
     return {"user_message_type": message_type}
 
 classify_message_type.__graphname__ = "Получить тип сообщения пользователя"
-
-async def llm_chat(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) -> BitrixQAState:
-    """Сгенерировать ответ на сообщение пользователя, без контекста, простой ответ"""
-    context = runtime.context or BitrixQAContext()
-    answer = await llm_chat_chain(context.model).ainvoke({"user_message": state.query})
-    return {"answer": answer, "messages": AIMessage(content=answer)}
-
-llm_chat.__graphname__ = "Получить простой ответ на сообщение, просто чат без QA"
 
 async def qa_node(state: BitrixQAState) -> RAGState:
     """Промежуточная нода для перехода к части с RAG"""
@@ -108,7 +120,7 @@ async def generate_answer(state: RAGState, runtime: Runtime[BitrixQAContext]) ->
     answer = await generate_answer_chain(context.model).ainvoke({"context": state.context, "query": state.query})
     return {"answer": answer, "messages": AIMessage(content=answer)}
 
-generate_answer.__graphname__ = "Сгенерировать ответ на вопрос"
+generate_answer.__graphname__ = "Сгенерировать ответ на вопрос по базе знаний"
 
 async def user_node(state: BitrixQAState) -> BitrixQAState:
     """Нода для получения сообщения от пользователя"""

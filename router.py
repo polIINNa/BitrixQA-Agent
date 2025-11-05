@@ -26,9 +26,7 @@ async def get_answer(query: str, thread_id: str) -> str:
             config=config
         )
     print(result)
-    if result["user_message_type"] == "small_talk" or result["user_message_type"] == "knowledge_question":
-        return result["answer"]
-    elif result["user_message_type"] == "objection":
+    if result["user_message_type"] == "objection":
         return "need_human"
     else:
-        return "end_dialogue"
+        return result["answer"]

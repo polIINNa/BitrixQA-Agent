@@ -16,16 +16,24 @@ from bitrixqa_agent.chains import (
 async def admin_node(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) -> BitrixQAState:
     """Просто ответить на сообщение пользователя в режиме чата"""
     context = runtime.context or BitrixQAContext()
-    chat_history = "\n".join(f"{msg.type}: {msg.content}" for msg in state.messages[:-1])
-    last_user_message = state.messages[-1].content
-    if state.user_message_type == "small_talk":
-        answer = "нет"
+    chat = ""
+    for msg in state.messages:
+        if msg.type == "human":
+            chat += f"Пользователь: {msg.content}\n"
+        else:
+            chat += f"Твой ответ: {msg.content}\n"
+    # last_user_message = state.messages[-1].content
     if state.user_message_type == "knowledge_question":
         answer = state.answer
+    else:
+        answer = "нет"
+    print("!!!!!!!!")
+    print(chat)
+    print("!!!!!!!!")
     answer = await admin_answer_chain(context.model).ainvoke(
         {
-            "chat_history": chat_history,
-            "last_user_message": last_user_message,
+            "chat": chat,
+            # "last_user_message": last_user_message,
             "raw_answer": answer
         }
     )
@@ -33,7 +41,23 @@ async def admin_node(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) ->
 
 admin_node.__graphname__ = "Ответить на сообщение пользователя в режиме чат"
 
-async def prepare_query(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) -> BitrixQAState:
+async def classify_message_type(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) -> BitrixQAState:
+    """Получить тип сообщения пользователя"""
+    context = runtime.context or BitrixQAContext()
+    chat_history = "\n".join(f"{msg.type}: {msg.content}" for msg in state.messages[:-1])
+    last_user_message = state.messages[-1].content
+    message_type = (await classify_message_chain(context.model).ainvoke(
+        {
+            "chat_history": chat_history,
+            "last_user_message": last_user_message
+        }
+    )).type
+    return {"user_message_type": message_type}
+
+classify_message_type.__graphname__ = "Получить тип сообщения пользователя"
+
+
+async def prepare_search_query(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) -> RAGState:
     """Получить текущий запрос пользователя из истории сообщений"""
     context = runtime.context or BitrixQAContext()
     if len(state.messages) == 1:
@@ -49,21 +73,7 @@ async def prepare_query(state: BitrixQAState, runtime: Runtime[BitrixQAContext])
         )
         return {"query": query}
 
-prepare_query.__graphname__ = "Получить текущий запрос пользователя из истории сообщений"
-
-async def classify_message_type(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) -> BitrixQAState:
-    """Получить тип сообщения пользователя"""
-    context = runtime.context or BitrixQAContext()
-    message_type = (await classify_message_chain(context.model).ainvoke({"user_message": state.query})).type
-    return {"user_message_type": message_type}
-
-classify_message_type.__graphname__ = "Получить тип сообщения пользователя"
-
-async def qa_node(state: BitrixQAState) -> RAGState:
-    """Промежуточная нода для перехода к части с RAG"""
-    return {"query": state.query}
-
-qa_node.__graphname__ = "Нода для перехода к RAG"
+prepare_search_query.__graphname__ = "Получить запрос для поиска по базе знаний"
 
 async def get_relevant_articles_ids(state: RAGState, runtime: Runtime[BitrixQAContext]) -> RAGState:
     """Получить релевантные ids по всем батчам"""
@@ -118,7 +128,7 @@ async def generate_answer(state: RAGState, runtime: Runtime[BitrixQAContext]) ->
     """Сгенерирвоать ответ на вопрос"""
     context = runtime.context or BitrixQAContext()
     answer = await generate_answer_chain(context.model).ainvoke({"context": state.context, "query": state.query})
-    return {"answer": answer, "messages": AIMessage(content=answer)}
+    return {"answer": answer}
 
 generate_answer.__graphname__ = "Сгенерировать ответ на вопрос по базе знаний"
 

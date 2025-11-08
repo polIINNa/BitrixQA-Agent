@@ -4,13 +4,13 @@ from langgraph.constants import START, END
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-from bitrixqa_agent.state import BitrixQAState
-from bitrixqa_agent.context import BitrixQAContext
-from bitrixqa_agent.nodes import (
+from bitrix_qa_agent.state import BitrixQAState
+from bitrix_qa_agent.context import BitrixQAContext
+from bitrix_qa_agent.nodes import (
     prepare_search_query, get_relevant_articles_ids, form_context, generate_answer,
     classify_message_type, admin_node, user_node
 )
-from bitrixqa_agent.routing_functions import message_type_routing
+from bitrix_qa_agent.routing_functions import message_type_routing
 
 builder = StateGraph(BitrixQAState, context_schema=BitrixQAContext)
 

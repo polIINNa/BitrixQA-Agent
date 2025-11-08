@@ -5,10 +5,10 @@ from langgraph.types import interrupt
 from langchain_core.runnables import RunnableLambda, Runnable
 from langchain_core.messages import HumanMessage, AIMessage
 
-from bitrixqa_agent.context import BitrixQAContext
-from bitrixqa_agent.state import BitrixQAState, RAGState
-from bitrixqa_agent.utils import get_article_batches, get_sections_content
-from bitrixqa_agent.chains import (
+from bitrix_qa_agent.context import BitrixQAContext
+from bitrix_qa_agent.state import BitrixQAState, RAGState
+from bitrix_qa_agent.utils import get_article_batches, get_sections_content
+from bitrix_qa_agent.chains import (
     choose_article_chain, generate_answer_chain, admin_answer_chain, classify_message_chain, prepare_query_chain
 )
 
@@ -22,18 +22,13 @@ async def admin_node(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) ->
             chat += f"Пользователь: {msg.content}\n"
         else:
             chat += f"Твой ответ: {msg.content}\n"
-    # last_user_message = state.messages[-1].content
     if state.user_message_type == "knowledge_question":
         answer = state.answer
     else:
         answer = "нет"
-    print("!!!!!!!!")
-    print(chat)
-    print("!!!!!!!!")
     answer = await admin_answer_chain(context.model).ainvoke(
         {
             "chat": chat,
-            # "last_user_message": last_user_message,
             "raw_answer": answer
         }
     )

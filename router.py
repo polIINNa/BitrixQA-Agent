@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 from psycopg_pool import AsyncConnectionPool
 from langchain_core.messages import HumanMessage
 
-from bitrixqa_agent.state import InputState
-from bitrixqa_agent.context import BitrixQAContext
-from bitrixqa_agent.graph import get_graph_with_inmemory_checkpoint, get_graph_with_postgresql_checkpoint
+from bitrix_qa_agent.state import InputState
+from bitrix_qa_agent.context import BitrixQAContext
+from bitrix_qa_agent.graph import get_graph_with_inmemory_checkpoint, get_graph_with_postgresql_checkpoint
 
 
 load_dotenv()

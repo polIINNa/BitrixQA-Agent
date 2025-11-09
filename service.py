@@ -36,7 +36,7 @@ async def get_answer_test(chat_history: str | None, last_user_message: str):
             chat = f"{chat_history}\nПользователь: {last_user_message}"
         else:
             chat = last_user_message
-        return await admin_answer_chain(context.model).ainvoke({"chat": chat, "raw_answer": "нет"})
+        return await admin_answer_chain(context.pro_model).ainvoke({"chat": chat, "raw_answer": "нет"})
 
 
 async def check_support_session_end(chat: str) -> bool:

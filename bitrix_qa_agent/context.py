@@ -21,7 +21,7 @@ class ChatModel(BaseModel):
 class BitrixQAContext(BaseModel):
     """Контекст графа"""
 
-    model: BaseChatModel = Field(
+    light_model: BaseChatModel = Field(
         description="LLM",
         default_factory=lambda: ChatModel(
             provider="openai",

@@ -2,7 +2,7 @@ import json
 
 from langgraph.runtime import Runtime
 from langgraph.types import interrupt
-from langchain_core.runnables import RunnableLambda, Runnable
+from langchain_core.runnables import RunnableLambda
 from langchain_core.messages import HumanMessage, AIMessage
 
 from bitrix_qa_agent.context import BitrixQAContext
@@ -16,12 +16,7 @@ from bitrix_qa_agent.chains import (
 async def admin_node(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) -> BitrixQAState:
     """Просто ответить на сообщение пользователя в режиме чата"""
     context = runtime.context or BitrixQAContext()
-    chat = ""
-    for msg in state.messages:
-        if msg.type == "human":
-            chat += f"Пользователь: {msg.content}\n"
-        else:
-            chat += f"Твой ответ: {msg.content}\n"
+    chat = f"{state.chat_history}\nПользователь: {state.last_user_message}"
     if state.user_message_type == "knowledge_question":
         answer = state.answer
     else:
@@ -39,12 +34,10 @@ admin_node.__graphname__ = "Ответить на сообщение польз�
 async def classify_message_type(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) -> BitrixQAState:
     """Получить тип сообщения пользователя"""
     context = runtime.context or BitrixQAContext()
-    chat_history = "\n".join(f"{msg.type}: {msg.content}" for msg in state.messages[:-1])
-    last_user_message = state.messages[-1].content
     message_type = (await classify_message_chain(context.model).ainvoke(
         {
-            "chat_history": chat_history,
-            "last_user_message": last_user_message
+            "chat_history": state.chat_history,
+            "last_user_message": state.last_user_message
         }
     )).type
     return {"user_message_type": message_type}
@@ -55,15 +48,13 @@ classify_message_type.__graphname__ = "Получить тип сообщени�
 async def prepare_search_query(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) -> RAGState:
     """Получить текущий запрос пользователя из истории сообщений"""
     context = runtime.context or BitrixQAContext()
-    if len(state.messages) == 1:
-        return {"query": state.messages[0].content}
+    if state.chat_history == "":
+        return {"query": state.last_user_message}
     else:
-        chat_history = "\n".join(f"{msg.type}: {msg.content}" for msg in state.messages[:-1])
-        last_user_message = state.messages[-1].content
         query = await prepare_query_chain(context.model).ainvoke(
             {
-                "chat_history": chat_history,
-                "last_user_message": last_user_message,
+                "chat_history": state.chat_history,
+                "last_user_message": state.last_user_message,
             }
         )
         return {"query": query}
@@ -126,10 +117,3 @@ async def generate_answer(state: RAGState, runtime: Runtime[BitrixQAContext]) ->
     return {"answer": answer}
 
 generate_answer.__graphname__ = "Сгенерировать ответ на вопрос по базе знаний"
-
-async def user_node(state: BitrixQAState) -> BitrixQAState:
-    """Нода для получения сообщения от пользователя"""
-    message_to_user = interrupt(state.answer)
-    return {"messages": [HumanMessage(content=message_to_user)]}
-
-user_node.__graphname__ = "Отправить ответ пользователю (ожидание ответа от него)"

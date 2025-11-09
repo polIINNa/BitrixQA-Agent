@@ -7,8 +7,8 @@ from langgraph.graph.message import add_messages
 
 class InputState(BaseModel):
     """Входные данные"""
-    query: str = Field(description="Вопрос пользователя")
-    messages: Annotated[list[AnyMessage], add_messages] = Field(description="История сообщения ЧАТА")
+    chat_history: str = Field(description="История чата", default="")
+    last_user_message: str = Field(description="Последнее сообщение пользователя")
 
 
 class RAGState(BaseModel):

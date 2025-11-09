@@ -2,7 +2,7 @@ import asyncio
 
 from dotenv import load_dotenv
 
-from router import get_answer
+from service import get_answer
 
 load_dotenv(override=True)
 

@@ -54,12 +54,15 @@ async def exists_chat(chat_id: int) -> bool:
         return result.scalar_one_or_none() is not None
 
 
-async def create_support_session(chat_id: int, *, assistant_type: AssistantType) -> SupportSession:
+async def create_support_session(
+    chat_id: int,
+    assistant_type: AssistantType = AssistantType.ai
+) -> SupportSession:
     async with AsyncSessionLocal() as session:
         support_session = SupportSession(
             chat_id=chat_id,
             status=SupportStatus.process,
-            assistant_type=assistant_type,
+            assistant_type=assistant_type
         )
         session.add(support_session)
         await session.commit()
@@ -108,9 +111,9 @@ async def add_message(
     support_session_id: int,
     content: str,
     *,
-    type: MessageType = MessageType.text,
-    role: MessageRole = MessageRole.user,
-    assistant_type: Optional[AssistantType] = None,
+    role: MessageRole,
+    assistant_type: AssistantType | None = None,
+    type: MessageType = MessageType.text
 ) -> Message:
     async with AsyncSessionLocal() as session:
         message = Message(
@@ -126,17 +129,7 @@ async def add_message(
         return message
 
 
-async def list_messages(support_session_id: int, limit: int = 50) -> Sequence[Message]:
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(Message)
-            .where(Message.support_session_id == support_session_id)
-            .order_by(Message.id.asc())
-            .limit(limit)
-        )
-        return list(result.scalars().all())
-
-async def get_all_messages(support_session_id: int) -> Sequence[Message]:
+async def get_all_messages(support_session_id: int) -> list[Message]:
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Message)

@@ -2,7 +2,7 @@ import asyncio
 
 from telegram_bot.database.base import engine
 from telegram_bot.database.config import Base
-from telegram_bot.database.models import User, SupportSession, Message
+from telegram_bot.database.models import Chat, SupportSession, Message
 
 async def init_db():
     async with engine.begin() as conn:

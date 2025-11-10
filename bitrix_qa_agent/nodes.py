@@ -1,9 +1,8 @@
 import json
 
 from langgraph.runtime import Runtime
-from langgraph.types import interrupt
 from langchain_core.runnables import RunnableLambda
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import AIMessage
 
 from bitrix_qa_agent.context import BitrixQAContext
 from bitrix_qa_agent.state import BitrixQAState, RAGState

@@ -17,7 +17,7 @@ from telegram_bot.utils import (
     get_chat_history
 )
 from telegram_bot.constants import NEED_HUMAN_MESSAGE
-from service import get_answer, check_support_session_end, get_answer_test
+from service import get_answer, check_support_session_end
 
 
 load_dotenv()
@@ -86,7 +86,7 @@ async def get_ai_answer(
 ) -> tuple[str, str | None]:
     """Получает ответ от AI на основе истории диалога"""
     chat_history = await get_chat_history(support_session)
-    answer = await get_answer_test(chat_history=chat_history, last_user_message=user_message)
+    answer = await get_answer(chat_history=chat_history, last_user_message=user_message)
     return answer, chat_history
 
 

@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Column, Integer, ForeignKey, Enum, Text,
+    Column, Integer, ForeignKey, Enum, Text, String,
     TIMESTAMP, func
 )
 from sqlalchemy.orm import relationship
@@ -23,6 +23,7 @@ class MessageType(str, enum.Enum):
 class MessageRole(str, enum.Enum):
     user = "user"
     assistant = "assistant"
+    system = "system"
 
 
 class AssistantType(str, enum.Enum):
@@ -33,7 +34,7 @@ class AssistantType(str, enum.Enum):
 class Chat(Base):
     __tablename__ = "chats"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(String, primary_key=True)
 
     sessions = relationship("SupportSession", back_populates="chat", cascade="all, delete-orphan")
 
@@ -41,8 +42,8 @@ class Chat(Base):
 class SupportSession(Base):
     __tablename__ = "support_session"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    chat_id = Column(Integer, ForeignKey("chats.id"), nullable=False)
+    id = Column(String, primary_key=True)  # формат: <chat_id>_<уникальный сессии>
+    chat_id = Column(String, ForeignKey("chats.id"), nullable=False)
 
     status = Column(Enum(SupportStatus, native_enum=False), default=SupportStatus.process, nullable=False)
     assistant_type = Column(Enum(AssistantType, native_enum=False), default=AssistantType.ai, nullable=False)
@@ -58,10 +59,11 @@ class SupportSession(Base):
 class Message(Base):
     __tablename__ = "messages"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    support_session_id = Column(Integer, ForeignKey("support_session.id"), nullable=False)
+    id = Column(String, primary_key=True)
+    support_session_id = Column(String, ForeignKey("support_session.id"), nullable=False)
 
     content = Column(Text, nullable=False)
+    created_at_str = Column(String, nullable=True)
     type = Column(Enum(MessageType, native_enum=False), nullable=False)
     role = Column(Enum(MessageRole, native_enum=False), nullable=False)
     assistant_type = Column(Enum(AssistantType, native_enum=False), nullable=True)

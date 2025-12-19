@@ -42,12 +42,12 @@ async def get_answer_test(chat_history: str | None, last_user_message: str):
 async def check_support_session_end(chat: str) -> bool:
     """Определить, завершена сессия поддержки или нет"""
     context = BitrixQAContext()
-    result = (await is_support_session_end_chain(model=context.pro_model).ainvoke(
+    result = await is_support_session_end_chain(model=context.pro_model).ainvoke(
         {
             "chat": chat
         }
-    )).is_support_session_end
-    if result == 1:
+    )
+    if result == "1":
         return True
     else:
         return False

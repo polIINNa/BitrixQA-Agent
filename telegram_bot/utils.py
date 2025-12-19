@@ -1,7 +1,9 @@
+import asyncio
 from aiogram import types
-from telegram_bot.database import crud, models
-from telegram_bot.database.models import Message, MessageRole
+from datetime import datetime, timedelta
 
+from telegram_bot.database import crud, models
+from telegram_bot.database.models import Message, MessageRole, SupportStatus, AssistantType
 
 # Медиа-типы и их описания
 MEDIA_TYPE_MAP = {
@@ -19,15 +21,15 @@ MEDIA_TYPE_MAP = {
 }
 
 
-def create_chat_history(messages: list[Message]) -> str:
+def create_chat(support_session_messages: list[Message]) -> str:
     """Сформировать историю сообщений по сообщениям сессии"""
-    chat_history = ""
-    for message in messages:
+    chat = ""
+    for message in support_session_messages:
         if message.role == MessageRole.user:
-            chat_history += f"Пользователь: {message.content}\n"
-        else:
-            chat_history += f"Ассистент: {message.content}\n"
-    return chat_history
+            chat += f"<Пользователь>\n{message.content}\n</Пользователь>\n\n"
+        if message.role == MessageRole.assistant:
+            chat += f"<Ассистент>\n{message.content}\n</Ассистент>\n\n"
+    return chat
 
 
 def has_media_content(message: types.Message) -> bool:
@@ -71,25 +73,45 @@ def get_media_info(message: types.Message) -> tuple[models.MessageType, str]:
     else:
         media_type = models.MessageType.text
         description = "[Медиа-контент]"
-    
+
     # Добавляем подпись, если есть
     content_parts = [description]
     if message.caption:
         content_parts.append(message.caption)
-    
+
     return media_type, " ".join(content_parts)
 
 
-async def get_or_create_support_session(chat_id: int) -> models.SupportSession:
+async def get_or_create_support_session(chat_id: str) -> models.SupportSession:
     """Получает или создает активную сессию поддержки"""
-    chat = await crud.get_or_create_chat(chat_id)
+    chat = await crud.get_or_create_chat(str(chat_id)) # преобразуем chat_id в строку
     support_session = await crud.get_active_session(chat.id)
     if not support_session:
         support_session = await crud.create_support_session(chat_id=chat.id)
     return support_session
 
 
-async def get_chat_history(support_session: models.SupportSession) -> str | None:
+async def get_chat_history(support_session_messages: list[Message]) -> str | None:
     """Получает историю чата для сессии"""
-    messages = await crud.get_all_messages(support_session_id=support_session.id)
-    return None if len(messages) == 1 else create_chat_history(messages[:-1])
+    if len(support_session_messages) == 1:
+        return None
+    return create_chat(support_session_messages[:-1])
+
+
+async def should_send_auto_reply(session_id: str) -> bool:
+    """Решает, нужен ли сообщение-автоответчика"""
+    session_messages = await crud.get_all_messages(session_id)
+    if session_id.split("_")[1] == "1" and len(session_messages) == 1:
+        return True
+    last_message = session_messages[-1]
+    if last_message.created_at_str:
+        try:
+            last_date = datetime.fromisoformat(last_message.created_at_str)
+            if datetime.now() - last_date >= timedelta(days=14):
+                return True
+        except Exception as e:
+            print(f"Ошибка парсинга даты: {e}")
+            return True
+    else:
+        return True
+    return False

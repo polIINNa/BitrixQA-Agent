@@ -2,12 +2,11 @@ from dotenv import load_dotenv
 
 from bitrix_qa_agent.state import InputState
 from bitrix_qa_agent.context import BitrixQAContext
-from bitrix_qa_agent.chains.chains import is_support_session_end_chain
 from bitrix_qa_agent.graph import get_simple_graph
+from orchestrator.chains import is_support_session_end_chain
 
 
 load_dotenv()
-
 
 async def get_answer(chat_history: str | None, last_user_message) -> str:
     """Основная функция для получения ответа"""
@@ -24,19 +23,6 @@ async def get_answer(chat_history: str | None, last_user_message) -> str:
         return "need_human"
     else:
         return result["answer"]
-
-async def get_answer_test(chat_history: str | None, last_user_message: str):
-    from bitrix_qa_agent.chains.chains import admin_answer_chain
-
-    context = BitrixQAContext()
-    if "специалист" in last_user_message:
-        return "need_human"
-    else:
-        if chat_history:
-            chat = f"{chat_history}\nПользователь: {last_user_message}"
-        else:
-            chat = last_user_message
-        return await admin_answer_chain(context.pro_model).ainvoke({"chat": chat, "raw_answer": "нет"})
 
 
 async def check_support_session_end(chat: str) -> bool:

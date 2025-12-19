@@ -4,8 +4,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 from bitrix_qa_agent.chains.prompts import (
     choose_article_prompt, ArticleRelevantIDS, generate_answer_prompt,
-    message_type_classification_prompt, MessageTypeClassification, admin_prompt, prepare_query_prompt,
-    support_session_end_prompt
+    message_type_classification_prompt, MessageTypeClassification, admin_prompt, prepare_query_prompt
 )
 
 
@@ -32,8 +31,3 @@ def admin_answer_chain(model: BaseChatModel) -> Runnable:
 def prepare_query_chain(model: BaseChatModel) -> Runnable:
     """Цепочка для получения ответа на вопрос пользователя"""
     return prepare_query_prompt | model | StrOutputParser()
-
-
-def is_support_session_end_chain(model: BaseChatModel) -> Runnable:
-    """Цепочка для определения окончания сессии поддержки"""
-    return support_session_end_prompt | model | StrOutputParser()

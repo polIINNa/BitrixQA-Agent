@@ -26,9 +26,9 @@ from telegram_bot.constants import NEED_HUMAN_MESSAGE, AUTO_REPLY, CHECK_USER_ME
 
 
 load_dotenv()
-TOKEN = os.environ["TELEGRAM_API_TOKEN_TEST"]
+TOKEN = os.environ["TELEGRAM_API_TOKEN"]
 TECH_SUPPORT_ID = os.environ["TECH_SUPPORT_ID"]
-OPERATOR_ID = os.environ["OPERATOR_ID_TEST"]
+OPERATOR_ID = os.environ["OPERATOR_ID"]
 
 dp = Dispatcher()
 bot = Bot(
@@ -180,7 +180,7 @@ async def handle_client_message(message: types.Message):
             role=models.MessageRole.user,
             type=MessageType.text
         )
-    # выход, если перевод на оператора
+    # выход, если сессию ведет оператор
     if support_session.assistant_type == AssistantType.human:
         print("Отвечает специалист, выход из функции")
         return

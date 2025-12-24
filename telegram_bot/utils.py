@@ -1,7 +1,6 @@
-import asyncio
 from aiogram import types
-from datetime import datetime, timedelta
 
+from service import get_answer
 from telegram_bot.database import crud, models
 from telegram_bot.database.models import Message, MessageRole, SupportStatus, AssistantType
 
@@ -84,7 +83,7 @@ def get_media_info(message: types.Message) -> tuple[models.MessageType, str]:
 
 async def get_or_create_support_session(chat_id: str) -> models.SupportSession:
     """Получает или создает активную сессию поддержки"""
-    chat = await crud.get_or_create_chat(str(chat_id)) # преобразуем chat_id в строку
+    chat = await crud.get_or_create_chat(chat_id)
     support_session = await crud.get_active_session(chat.id)
     if not support_session:
         support_session = await crud.create_support_session(chat_id=chat.id)
@@ -97,21 +96,11 @@ async def get_chat_history(support_session_messages: list[Message]) -> str | Non
         return None
     return create_chat(support_session_messages[:-1])
 
-
-async def should_send_auto_reply(session_id: str) -> bool:
-    """Решает, нужен ли сообщение-автоответчика"""
-    session_messages = await crud.get_all_messages(session_id)
-    if session_id.split("_")[1] == "1" and len(session_messages) == 1:
-        return True
-    last_message = session_messages[-1]
-    if last_message.created_at_str:
-        try:
-            last_date = datetime.fromisoformat(last_message.created_at_str)
-            if datetime.now() - last_date >= timedelta(days=14):
-                return True
-        except Exception as e:
-            print(f"Ошибка парсинга даты: {e}")
-            return True
-    else:
-        return True
-    return False
+async def get_agent_answer(
+    support_session_messages: list[Message],
+    user_message: str
+) -> tuple[str, str | None]:
+    """Получить ответ от агента"""
+    chat_history = await get_chat_history(support_session_messages=support_session_messages)
+    answer = await get_answer(chat_history=chat_history, last_user_message=user_message)
+    return answer, chat_history

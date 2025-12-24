@@ -1,7 +1,9 @@
 import os
+import httpx
 from pathlib import Path
 
 from pydantic import BaseModel, Field
+from langchain_openai import ChatOpenAI
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 
@@ -20,7 +22,6 @@ class ChatModel(BaseModel):
 
 class BitrixQAContext(BaseModel):
     """Контекст графа"""
-
     light_model: BaseChatModel = Field(
         description="LLM",
         default_factory=lambda: ChatModel(
@@ -29,7 +30,10 @@ class BitrixQAContext(BaseModel):
             kwargs={
                 "api_key": os.getenv("OPENROUTER_API_KEY"),
                 "base_url":"https://openrouter.ai/api/v1",
-                "temperature": 0
+                "temperature": 0,
+                "http_async_client": httpx.AsyncClient(
+                    proxy=f"http://{os.getenv('PROXY_LOGIN')}:{os.getenv('PROXY_PASSWORD')}@163.198.214.117:8000"
+                )
             }
         ).chat_model)
 
@@ -41,7 +45,10 @@ class BitrixQAContext(BaseModel):
             kwargs={
                 "api_key": os.getenv("OPENROUTER_API_KEY"),
                 "base_url":"https://openrouter.ai/api/v1",
-                "temperature": 0
+                "temperature": 0,
+                "http_async_client": httpx.AsyncClient(
+                    proxy=f"http://{os.getenv('PROXY_LOGIN')}:{os.getenv('PROXY_PASSWORD')}@163.198.214.117:8000"
+                )
             }
         ).chat_model)
 

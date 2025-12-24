@@ -6,8 +6,6 @@ from bitrix_qa_agent.graph import get_simple_graph
 from orchestrator.chains import is_support_session_end_chain
 
 
-load_dotenv()
-
 async def get_answer(chat_history: str | None, last_user_message) -> str:
     """Основная функция для получения ответа"""
     context = BitrixQAContext()

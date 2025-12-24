@@ -32,7 +32,7 @@ class BitrixQAContext(BaseModel):
                 "base_url":"https://openrouter.ai/api/v1",
                 "temperature": 0,
                 "http_async_client": httpx.AsyncClient(
-                    proxy=f"http://{os.getenv('PROXY_LOGIN')}:{os.getenv('PROXY_PASSWORD')}@163.198.214.117:8000"
+                    proxy=f"http://{os.getenv('PROXY_LOGIN')}:{os.getenv('PROXY_PASSWORD')}@{os.getenv('PROXY_HOST')}:{os.getenv('PROXY_PORT')}"
                 )
             }
         ).chat_model)
@@ -47,7 +47,7 @@ class BitrixQAContext(BaseModel):
                 "base_url":"https://openrouter.ai/api/v1",
                 "temperature": 0,
                 "http_async_client": httpx.AsyncClient(
-                    proxy=f"http://{os.getenv('PROXY_LOGIN')}:{os.getenv('PROXY_PASSWORD')}@163.198.214.117:8000"
+                    proxy=f"http://{os.getenv('PROXY_LOGIN')}:{os.getenv('PROXY_PASSWORD')}@{os.getenv('PROXY_HOST')}:{os.getenv('PROXY_PORT')}"
                 )
             }
         ).chat_model)

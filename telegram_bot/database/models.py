@@ -62,7 +62,7 @@ class Message(Base):
     id = Column(String, primary_key=True)
     support_session_id = Column(String, ForeignKey("support_session.id"), nullable=False)
 
-    content = Column(Text, nullable=False)
+    content = Column(Text, nullable=True)
     created_at_str = Column(String, nullable=True)
     type = Column(Enum(MessageType, native_enum=False), nullable=False)
     role = Column(Enum(MessageRole, native_enum=False), nullable=False)

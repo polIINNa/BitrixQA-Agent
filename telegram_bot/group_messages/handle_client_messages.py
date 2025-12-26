@@ -2,11 +2,12 @@ import asyncio
 
 from aiogram import types, Bot
 
+from service import get_user_message_from_media
 from telegram_bot.database import crud
 from telegram_bot.database.models import MessageRole, MessageType, AssistantType
 from telegram_bot.group_messages.utils import switch_to_human_specialist, clean_message_from_mention, \
     process_agent_response
-from telegram_bot.utils import get_or_create_support_session, has_media_content, get_media_info, get_agent_answer
+from telegram_bot.utils import get_or_create_support_session, has_media_content, get_media_content, get_agent_answer
 
 
 async def handle_group_client_message(
@@ -21,32 +22,36 @@ async def handle_group_client_message(
     task = followup_tasks.pop(chat_id, None)
     if task:
         task.cancel()
-    # сохранение сообщения клиента в базе
-    has_media_content_flag = False
+    # определения сообщения клиента, сохранение сообщения клиента в базе данных
     if has_media_content(message):
-        print("Обнаружен медиа-контент, переключение на специалиста")
-        has_media_content_flag  = True
-        media_type, content = get_media_info(message)
+        print("Обработка медиа-контента")
+        media_data = await get_media_content(message, bot)
         await crud.add_message(
             support_session_id=support_session.id,
-            content=content,
             role=MessageRole.user,
-            type=media_type
+            type=media_data["media_type"],
+        )
+        user_message = await get_user_message_from_media(
+            type=media_data["media_type"],
+            content=media_data["content"],
+            caption=media_data["caption"] if "caption" in media_data else None,
         )
     else:
+        user_message = message.text
         await crud.add_message(
             support_session_id=support_session.id,
-            content=message.text,
+            content=user_message,
             role=MessageRole.user,
             type=MessageType.text
         )
     # выход, если сессию ведет оператор
     if support_session.assistant_type == AssistantType.human:
-        print("Отвечает специалист, выход из функции")
+        print("Сессию ведет специалист, выход из функции")
         return
+    print("Сессию ведет бот")
     # получение и отправка сообщения клиенту
-    if has_media_content_flag:
-        print("Переключение на специалиста из-за наличия медиа-контента")
+    if user_message is None:
+        print("Переключение на специалиста из-за невозможности определения сообщения клиента")
         await switch_to_human_specialist(
             bot=bot,
             support_session=support_session,
@@ -58,7 +63,7 @@ async def handle_group_client_message(
     session_messages = await crud.get_all_messages(support_session.id)
     answer, chat_history = await get_agent_answer(
         support_session_messages=session_messages,
-        user_message=clean_message_from_mention(message.text)
+        user_message=clean_message_from_mention(user_message)
     )
     if answer == "need_human":
         print("Переключение диалога на специалиста")

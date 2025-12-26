@@ -20,7 +20,7 @@ async def admin_node(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) ->
         answer = state.answer
     else:
         answer = "нет"
-    answer = await admin_answer_chain(context.pro_model).ainvoke(
+    answer = await admin_answer_chain(context.admin_answer_model).ainvoke(
         {
             "chat": chat,
             "raw_answer": answer
@@ -33,7 +33,7 @@ admin_node.__graphname__ = "Ответить на сообщение польз�
 async def classify_message_type(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) -> BitrixQAState:
     """Получить тип сообщения пользователя"""
     context = runtime.context or BitrixQAContext()
-    message_type = (await classify_message_chain(context.light_model).ainvoke(
+    message_type = (await classify_message_chain(context.classify_message_model).ainvoke(
         {
             "chat_history": state.chat_history,
             "last_user_message": state.last_user_message
@@ -50,7 +50,7 @@ async def prepare_search_query(state: BitrixQAState, runtime: Runtime[BitrixQACo
     if state.chat_history == "":
         return {"query": state.last_user_message}
     else:
-        query = await prepare_query_chain(context.light_model).ainvoke(
+        query = await prepare_query_chain(context.prepare_query_model).ainvoke(
             {
                 "chat_history": state.chat_history,
                 "last_user_message": state.last_user_message,
@@ -78,7 +78,7 @@ async def get_relevant_articles_ids(state: RAGState, runtime: Runtime[BitrixQACo
         articles_metadata = json.load(f)
     article_batches = get_article_batches(articles_metadata=articles_metadata, batch_size=context.articles_batch_size)
     _inputs = [
-        {"articles_metadata": batch_articles_metadata, "query": state.query, "model": context.light_model}
+        {"articles_metadata": batch_articles_metadata, "query": state.query, "model": context.get_relevant_articles_model}
         for batch_articles_metadata in article_batches
     ]
     relevant_articles_ids_all = []
@@ -112,7 +112,7 @@ form_context.__graphname__ = "Сформировать контекст для �
 async def generate_answer(state: RAGState, runtime: Runtime[BitrixQAContext]) -> BitrixQAState:
     """Сгенерирвоать ответ на вопрос"""
     context = runtime.context or BitrixQAContext()
-    answer = await generate_answer_chain(context.light_model).ainvoke({"context": state.context, "query": state.query})
+    answer = await generate_answer_chain(context.generate_answer_model).ainvoke({"context": state.context, "query": state.query})
     return {"answer": answer}
 
 generate_answer.__graphname__ = "Сгенерировать ответ на вопрос по базе знаний"

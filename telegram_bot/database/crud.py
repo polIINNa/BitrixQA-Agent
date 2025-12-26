@@ -122,7 +122,7 @@ async def update_session_assistant_type(session_id: str, *, assistant_type: Assi
 
 async def add_message(
     support_session_id: str,
-    content: str,
+    content: str | None = None,
     *,
     role: MessageRole,
     assistant_type: AssistantType | None = None,

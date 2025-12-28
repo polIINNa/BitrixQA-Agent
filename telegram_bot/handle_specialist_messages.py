@@ -6,7 +6,7 @@ from telegram_bot.database.models import MessageRole, AssistantType, SupportStat
 from telegram_bot.utils import create_chat
 
 
-async def handle_group_specialist_message(message: types.Message, chat_id: str):
+async def handle_specialist_message(message: types.Message, chat_id: str):
     """Обработать сообщение специалиста"""
     support_session = await crud.get_active_session(chat_id=chat_id)
     await crud.add_message(

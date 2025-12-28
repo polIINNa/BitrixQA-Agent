@@ -33,7 +33,7 @@ async def handle_business_message(message: types.Message):
     print(message.text)
     if str(message.from_user.id) == TECH_SUPPORT_ACCOUNT_ID:
         print("Обработка сообщения специалиста")
-        await handle_specialist_messages.handle_group_specialist_message(
+        await handle_specialist_messages.handle_specialist_message(
             chat_id=str(message.chat.id),
             message=message,
         )
@@ -72,7 +72,7 @@ async def handle_group_message(message: types.Message):
         # Получаем сообщение, на которое ответили (сообщение клиента)
         client_message = message.reply_to_message
         chat_id = f"{client_message.chat.id}_{client_message.from_user.id}"
-        await handle_specialist_messages.handle_group_specialist_message(
+        await handle_specialist_messages.handle_specialist_message(
             message=message,
             chat_id=chat_id,
         )

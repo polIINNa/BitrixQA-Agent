@@ -4,7 +4,8 @@ from bitrix_qa_agent.state import InputState
 from bitrix_qa_agent.graph import get_simple_graph
 from bitrix_qa_agent.context import BitrixQAContext
 
-from orchestrator.chains import is_support_session_end_chain
+from orchestrator.chains import is_support_session_end_chain, is_new_intent_chain
+from orchestrator.context import OrchestratorContext
 
 from media_recognizer.utils import encode_image
 from media_recognizer.context import MediaRecognizerContext
@@ -70,3 +71,18 @@ async def get_user_message_from_media(type: str, content: bytes, caption: str | 
         else:
             return (await identify_problem_from_img(img_bytes=content, caption=caption))
     return None
+
+
+async def is_new_intent_check(chat_history: str, last_user_message: str) -> bool:
+    """Проверить, является ли сообщение клиента новым или относится к завершенному диалогу"""
+    context = OrchestratorContext()
+    res = await is_new_intent_chain(model=context.is_new_intent_model).ainvoke(
+        {
+            "chat_history": chat_history,
+            "last_user_message": last_user_message
+        }
+    )
+    if res == "1":
+        return True
+    else:
+        return False

@@ -1,12 +1,14 @@
 from aiogram import types, Bot
 from aiogram.enums import ContentType
+from aiogram.methods import ReadBusinessMessage
+from aiogram.types import ReactionTypeEmoji
 
 from service import get_answer
 from telegram_bot.database import crud, models
-from telegram_bot.database.models import Message, MessageRole, SupportStatus, AssistantType
+from telegram_bot.database.models import Message, MessageRole, SupportStatus, AssistantType, SupportSession, MessageType
 
 
-def create_chat(support_session_messages: list[Message]) -> str:
+def format_chat_from_message(support_session_messages: list[Message]) -> str:
     """Сформировать историю сообщений по сообщениям сессии"""
     chat = ""
     for message in support_session_messages:
@@ -54,12 +56,10 @@ async def get_media_content(message: types.Message, bot: Bot) -> dict:
     }
 
 
-async def get_or_create_support_session(chat_id: str) -> models.SupportSession:
-    """Получает или создает активную сессию поддержки"""
+async def get_active_support_session(chat_id: str) -> SupportSession:
+    """Получает или создает сессию поддержки"""
     chat = await crud.get_or_create_chat(chat_id)
     support_session = await crud.get_active_session(chat.id)
-    if not support_session:
-        support_session = await crud.create_support_session(chat_id=chat.id)
     return support_session
 
 
@@ -67,7 +67,8 @@ async def get_chat_history(support_session_messages: list[Message]) -> str | Non
     """Получает историю чата для сессии"""
     if len(support_session_messages) == 1:
         return None
-    return create_chat(support_session_messages[:-1])
+    return format_chat_from_message(support_session_messages[:-1])
+
 
 async def get_agent_answer(
     support_session_messages: list[Message],
@@ -77,3 +78,24 @@ async def get_agent_answer(
     chat_history = await get_chat_history(support_session_messages=support_session_messages)
     answer = await get_answer(chat_history=chat_history, last_user_message=user_message)
     return answer, chat_history
+
+
+async def _save_user_message_to_db(
+        has_media_content_flag: bool,
+        support_session: SupportSession,
+        message_text_content: str | None = None,
+        media_data: dict | None = None,
+) -> None:
+    """Сохранить сообщение клиента в БД"""
+    if has_media_content_flag:
+        await crud.add_message(
+            support_session_id=support_session.id,
+            role=MessageRole.user,
+            type=media_data["media_type"],
+        )
+    await crud.add_message(
+        support_session_id=support_session.id,
+        content=message_text_content,
+        role=MessageRole.user,
+        type=MessageType.text
+    )

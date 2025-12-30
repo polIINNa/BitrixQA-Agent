@@ -83,7 +83,7 @@ async def create_support_session(
         return support_session
 
 
-async def get_active_session(chat_id: str) -> Optional[SupportSession]:
+async def get_active_session(chat_id: str) -> SupportSession | None:
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(SupportSession)
@@ -91,6 +91,17 @@ async def get_active_session(chat_id: str) -> Optional[SupportSession]:
                 SupportSession.chat_id == chat_id,
                 SupportSession.status == SupportStatus.process,
             )
+            .order_by(SupportSession.created_at.desc())
+        )
+        return result.scalars().first()
+
+
+async def get_latest_session(chat_id: str) -> SupportSession | None:
+    """Получить последнюю сессию"""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(SupportSession)
+            .where(SupportSession.chat_id == chat_id)
             .order_by(SupportSession.created_at.desc())
         )
         return result.scalars().first()

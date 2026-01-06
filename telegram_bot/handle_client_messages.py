@@ -73,7 +73,7 @@ async def handle_client_message(
         print("Сообщение клиента просто текст")
         message_text_content = message.text
     
-    # Получение или создание сессии
+    # Получение или создание (если новый чат) сессии
     support_session = await _get_active_support_session(chat_id=chat_id)
     support_session = await _get_or_create_session(
         support_session=support_session,
@@ -94,17 +94,15 @@ async def handle_client_message(
     if support_session.assistant_type == AssistantType.human:
         print("Сессию ведет специалист, выход из функции")
         await _save_user_message_to_db(
-            has_media_content_flag=media_data is not None,
             support_session=support_session,
             message_text_content=message_text_content,
             media_data=media_data,
         )
         return
     
-    print("Сессию ведет бот")
-    await _process_active_session(
+    print("Сессию ведет ai-помощник")
+    await _process_ai_assistant_session(
         support_session=support_session,
-        chat_id=chat_id,
         chat_type=chat_type,
         bot=bot,
         message=message,
@@ -143,10 +141,9 @@ async def _get_or_create_session(
 # Обработка активной сессии
 # =============================================================================
 
-async def _process_active_session(
+async def _process_ai_assistant_session(
         support_session: SupportSession,
         chat_type: ChatType,
-        chat_id: str,
         bot: Bot,
         message: types.Message,
         operator_id: str,
@@ -155,13 +152,13 @@ async def _process_active_session(
         message_text_content: str | None = None,
         media_data: dict | None = None,
 ) -> None:
-    """Обработать сообщение клиента в действующей сессии."""
+    """Обработать сообщение клиента в сессии, которую ведёт AI."""
     # TODO: реализовать чтение сообщений в группе
     if chat_type == ChatType.PRIVATE:
         await bot(
             ReadBusinessMessage(
                 business_connection_id=message.business_connection_id,
-                chat_id=int(chat_id),
+                chat_id=int(support_session.chat_id),
                 message_id=message.message_id
             )
         )
@@ -170,7 +167,6 @@ async def _process_active_session(
     if message_text_content is None:
         print("Переключение на специалиста: невозможно определить сообщение")
         await _save_user_message_to_db(
-            has_media_content_flag=media_data is not None,
             support_session=support_session,
             message_text_content=message_text_content,
             media_data=media_data,
@@ -180,7 +176,6 @@ async def _process_active_session(
             support_session=support_session,
             bot=bot,
             message=message,
-            chat_id=chat_id,
             operator_id=operator_id,
             tech_support_account_id=tech_support_account_id,
         )
@@ -203,7 +198,6 @@ async def _process_active_session(
         support_session=support_session,
         bot=bot,
         message=message,
-        chat_id=chat_id,
         operator_id=operator_id,
         tech_support_account_id=tech_support_account_id,
         followup_tasks=followup_tasks,
@@ -218,7 +212,6 @@ async def _handle_qa_response(
         support_session: SupportSession,
         bot: Bot,
         message: types.Message,
-        chat_id: str,
         operator_id: str,
         followup_tasks: dict,
         tech_support_account_id: str | None = None,
@@ -230,13 +223,12 @@ async def _handle_qa_response(
     message_type = qa_result["message_type"]
     
     # Обработка смены темы диалога (новый интент)
-    # Сообщение будет сохранено в новую сессию внутри _handle_new_session_required
-    if message_type == "new_session_required":
+    # Сообщение будет сохранено в новую сессию внутри _handle_intent_change
+    if message_type == "intent_changed":
         print("Обнаружена смена темы диалога, создание новой сессии")
-        await _handle_new_session_required(
+        await _handle_intent_change(
             support_session=support_session,
             chat_type=chat_type,
-            chat_id=chat_id,
             bot=bot,
             message=message,
             message_text_content=message_text_content,
@@ -250,7 +242,6 @@ async def _handle_qa_response(
     # Для всех остальных типов — сохраняем сообщение в текущую сессию (если ещё не сохранено)
     if not skip_message_save:
         await _save_user_message_to_db(
-            has_media_content_flag=media_data is not None,
             support_session=support_session,
             message_text_content=message_text_content,
             media_data=media_data,
@@ -263,7 +254,6 @@ async def _handle_qa_response(
             support_session=support_session,
             bot=bot,
             message=message,
-            chat_id=chat_id,
             operator_id=operator_id,
             tech_support_account_id=tech_support_account_id,
         )
@@ -273,7 +263,7 @@ async def _handle_qa_response(
     if message_type == "no_need_reply":
         print("Сообщение не требует ответа, проставление реакции")
         await bot.set_message_reaction(
-            chat_id=chat_id,
+            chat_id=support_session.chat_id,
             message_id=message.message_id,
             reaction=[ReactionTypeEmoji(emoji="👍")],
             is_big=False,
@@ -289,7 +279,7 @@ async def _handle_qa_response(
             else POSITIVE_ACKNOWLEDGEMENT_REPLY_SIMPLE
         )
         await bot.send_message(
-            chat_id=chat_id,
+            chat_id=support_session.chat_id,
             text=reply_text,
             business_connection_id=message.business_connection_id,
         )
@@ -297,12 +287,11 @@ async def _handle_qa_response(
     
     if message_type in ("knowledge_required", "chat"):
         print("Поиск ответа в базе знаний либо простой чат")
-        await _process_agent_response(
+        await _process_ai_assistant_answer(
             bot=bot,
             chat_type=chat_type,
             support_session=support_session,
             answer=qa_result["answer"],
-            chat_id=chat_id,
             message=message,
             followup_tasks=followup_tasks,
         )
@@ -312,10 +301,9 @@ async def _handle_qa_response(
 # Обработка смены темы диалога
 # =============================================================================
 
-async def _handle_new_session_required(
+async def _handle_intent_change(
     support_session: SupportSession,
     chat_type: ChatType,
-    chat_id: str,
     bot: Bot,
     message: types.Message,
     message_text_content: str,
@@ -329,11 +317,10 @@ async def _handle_new_session_required(
     await crud.update_session_status(session_id=support_session.id, status=SupportStatus.end)
     
     # Создаём новую сессию
-    new_session = await crud.create_support_session(chat_id=chat_id)
+    new_session = await crud.create_support_session(chat_id=support_session.chat_id)
     
     # Сохраняем сообщение пользователя в новую сессию
     await _save_user_message_to_db(
-        has_media_content_flag=media_data is not None,
         support_session=new_session,
         message_text_content=message_text_content,
         media_data=media_data,
@@ -347,14 +334,13 @@ async def _handle_new_session_required(
     
     print(f"Обработка ответа QA агента для новой сессии: {qa_result['message_type']}")
     
-    # Обрабатываем результат (рекурсивно, но уже без new_session_required)
+    # Обрабатываем результат (рекурсивно, но уже без intent_changed)
     await _handle_qa_response(
         qa_result=qa_result,
         chat_type=chat_type,
         support_session=new_session,
         bot=bot,
         message=message,
-        chat_id=chat_id,
         operator_id=operator_id,
         tech_support_account_id=tech_support_account_id,
         followup_tasks=followup_tasks,
@@ -374,7 +360,6 @@ async def _switch_to_human_specialist(
     support_session: SupportSession,
     message: types.Message,
     operator_id: str,
-    chat_id: str,
     tech_support_account_id: str | None = None,
 ) -> None:
     """Переключить сессию на специалиста и отправить уведомления."""
@@ -392,7 +377,7 @@ async def _switch_to_human_specialist(
     
     if chat_type == ChatType.PRIVATE:
         await bot.send_message(
-            chat_id=chat_id,
+            chat_id=support_session.chat_id,
             text=text,
             business_connection_id=message.business_connection_id
         )
@@ -418,16 +403,17 @@ async def _switch_to_human_specialist(
 # Отправка ответов и напоминаний
 # =============================================================================
 
-async def _process_agent_response(
+async def _process_ai_assistant_answer(
     bot: Bot,
     support_session: SupportSession,
     chat_type: ChatType,
     message: types.Message,
     answer: str,
-    chat_id: str,
     followup_tasks: dict[str, asyncio.Task]
 ) -> None:
     """Обработка ответа агента: сохранение в БД, установка таймера, отправка сообщения."""
+    chat_id = support_session.chat_id
+    
     await crud.add_message(
         support_session_id=support_session.id,
         content=answer,
@@ -493,13 +479,12 @@ async def _schedule_followup(
 # =============================================================================
 
 async def _save_user_message_to_db(
-        has_media_content_flag: bool,
         support_session: SupportSession,
         message_text_content: str | None = None,
         media_data: dict | None = None,
 ) -> None:
     """Сохранить сообщение клиента в БД."""
-    if has_media_content_flag and media_data:
+    if media_data:
         await crud.add_message(
             support_session_id=support_session.id,
             role=MessageRole.user,

@@ -3,7 +3,7 @@ import enum
 
 class UserMessageType(enum.Enum):
     """Тип сообщения клиента"""
-    NEW_SESSION_REQUIRED = 'new_session_required'
+    INTENT_CHANGED = 'intent_changed'
     NEGATIVE = 'negative'
     NO_NEED_REPLY = 'no_need_reply'
     POSITIVE_ACKNOWLEDGEMENT = 'positive_acknowledgement'

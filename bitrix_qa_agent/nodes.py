@@ -49,10 +49,7 @@ async def check_new_intent(
     
     if has_new_intent:
         return Command(
-            update={
-                "user_message_type": UserMessageType.NEW_SESSION_REQUIRED.value,
-                "is_new_session": True
-            },
+            update={"user_message_type": UserMessageType.INTENT_CHANGED.value},
             goto='__end__'
         )
     
@@ -90,7 +87,10 @@ async def check_negative(
         }
     )
     if has_negative:
-        return Command(update={"user_message_type": UserMessageType.NEGATIVE.value}, goto='__end__')
+        return Command(
+            update={"user_message_type": UserMessageType.NEGATIVE.value},
+            goto='__end__'
+        )
     return Command(goto=NodeNames.need_reply_check)
 
 
@@ -108,7 +108,10 @@ async def need_reply_check(
         }
     )).need_reply
     if need_reply == 0:
-        return Command(update={"user_message_type": UserMessageType.NO_NEED_REPLY.value}, goto='__end__')
+        return Command(
+            update={"user_message_type": UserMessageType.NO_NEED_REPLY.value},
+            goto='__end__'
+        )
     else:
         return Command(goto=NodeNames.positive_acknowledgement_check)
 
@@ -126,7 +129,10 @@ async def positive_acknowledgement_check(
         }
     ))
     if positive_acknowledgement:
-        return Command(update={"user_message_type": UserMessageType.POSITIVE_ACKNOWLEDGEMENT.value}, goto='__end__')
+        return Command(
+            update={"user_message_type": UserMessageType.POSITIVE_ACKNOWLEDGEMENT.value},
+            goto='__end__'
+        )
     else:
         return Command(goto=NodeNames.knowledge_required_check)
 
@@ -145,9 +151,15 @@ async def knowledge_required_check(
         }
     ))
     if knowledge_required:
-        return Command(update={"user_message_type": UserMessageType.KNOWLEDGE_REQUIRED.value}, goto=NodeNames.identify_search_query)
+        return Command(
+            update={"user_message_type": UserMessageType.KNOWLEDGE_REQUIRED.value},
+            goto=NodeNames.identify_search_query
+        )
     else:
-        return Command(update={"user_message_type": UserMessageType.CHAT}, goto=NodeNames.admin_node)
+        return Command(
+            update={"user_message_type": UserMessageType.CHAT},
+            goto=NodeNames.admin_node
+        )
 
 
 #TODO: выделить RAG часть в сабграф

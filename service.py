@@ -20,9 +20,8 @@ async def get_answer(
     Returns:
         dict с ключами:
             - message_type: тип сообщения (negative, no_need_reply, positive_acknowledgement, 
-                           knowledge_required, chat, new_session_required)
+                           knowledge_required, chat, intent_changed)
             - answer: ответ на вопрос (может быть None)
-            - is_new_session: требуется ли создание новой сессии
     """
     context = BitrixQAContext()
     bitrix_qa_graph = get_simple_graph()
@@ -39,7 +38,6 @@ async def get_answer(
     return {
         "message_type": result["user_message_type"],
         "answer": result["answer"],
-        "is_new_session": result.get("is_new_session", False),
     }
 
 

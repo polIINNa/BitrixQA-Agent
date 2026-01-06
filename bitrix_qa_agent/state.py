@@ -19,5 +19,4 @@ class RAGState(BaseModel):
 class BitrixQAState(InputState):
     """Основное состояние графа"""
     user_message_type: UserMessageType | None = Field(description="Тип сообщения пользователя", default=None)
-    is_new_session: bool = Field(description="Требуется ли создание новой сессии", default=False)
     answer: str | None = Field(description="Ответ на вопрос", default=None)

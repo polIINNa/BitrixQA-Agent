@@ -3,32 +3,9 @@ from sqlalchemy import (
     TIMESTAMP, func
 )
 from sqlalchemy.orm import relationship
-import enum
 
 from telegram_bot.database.config import Base
-
-
-class SupportStatus(str, enum.Enum):
-    end = "end"
-    process = "process"
-
-
-class MessageType(str, enum.Enum):
-    text = "text"
-    image = "image"
-    audio = "audio"
-    video = "video"
-
-
-class MessageRole(str, enum.Enum):
-    user = "user"
-    assistant = "assistant"
-    system = "system"
-
-
-class AssistantType(str, enum.Enum):
-    ai = "ai"
-    human = "human"
+from telegram_bot.enums import SupportStatus, MessageType, MessageRole, AssistantType
 
 
 class Chat(Base):

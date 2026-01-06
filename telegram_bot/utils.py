@@ -1,26 +1,43 @@
+"""Утилиты для работы с Telegram сообщениями."""
+import sys
+from pathlib import Path
+
+# Для запуска файла напрямую (python utils.py)
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from aiogram import types, Bot
 from aiogram.enums import ContentType
-from aiogram.methods import ReadBusinessMessage
-from aiogram.types import ReactionTypeEmoji
 
-from service import get_answer
-from telegram_bot.database import crud, models
-from telegram_bot.database.models import Message, MessageRole, SupportStatus, AssistantType, SupportSession, MessageType
+from telegram_bot.database.models import Message
+from telegram_bot.enums import ChatType, MessageRole
+
+
+def get_chat_id(message: types.Message, chat_type: ChatType) -> str:
+    """
+    Сформировать chat_id на основе типа чата.
+    
+    Для личных сообщений: chat.id
+    Для групп: chat.id_user.id (для идентификации конкретного пользователя в группе)
+    """
+    if chat_type == ChatType.PRIVATE:
+        return str(message.chat.id)
+    return f"{message.chat.id}_{message.from_user.id}"
 
 
 def format_chat_from_message(support_session_messages: list[Message]) -> str:
-    """Сформировать историю сообщений по сообщениям сессии"""
-    chat = ""
-    for message in support_session_messages:
-        if message.role == MessageRole.user:
-            chat += f"<Пользователь>\n{message.content}\n</Пользователь>\n\n"
-        if message.role == MessageRole.assistant:
-            chat += f"<Ассистент>\n{message.content}\n</Ассистент>\n\n"
-    return chat
+    """Сформировать историю сообщений в текстовом формате."""
+    parts = []
+    for msg in support_session_messages:
+        if msg.role == MessageRole.user:
+            parts.append(f"<Пользователь>\n{msg.content}\n</Пользователь>")
+        elif msg.role == MessageRole.assistant:
+            parts.append(f"<Ассистент>\n{msg.content}\n</Ассистент>")
+    return "\n\n".join(parts)
 
 
 def has_media_content(message: types.Message) -> bool:
-    """Проверяет, содержит ли сообщение медиа-контент (не только текст)"""
+    """Проверяет, содержит ли сообщение медиа-контент."""
     return any((
         message.photo, message.video, message.audio, message.voice,
         message.video_note, message.document, message.sticker,
@@ -29,7 +46,10 @@ def has_media_content(message: types.Message) -> bool:
 
 
 async def get_media_content(message: types.Message, bot: Bot) -> dict:
-    """Определяет тип медиа-контента и возвращает его содержимое (как bytes объект)"""
+    """Получить медиа-контент из сообщения."""
+    media_type: ContentType
+    file_info = None
+    
     if message.photo:
         media_type = ContentType.PHOTO
         file_info = await bot.get_file(message.photo[-1].file_id)
@@ -48,54 +68,16 @@ async def get_media_content(message: types.Message, bot: Bot) -> dict:
     elif message.document:
         media_type = ContentType.DOCUMENT
         file_info = await bot.get_file(message.document.file_id)
+    else:
+        raise ValueError("Неподдерживаемый тип медиа-контента")
+    
     file_bytes = await bot.download_file(file_info.file_path)
     return {
         "media_type": media_type.value,
         "content": file_bytes.getvalue() if hasattr(file_bytes, 'getvalue') else file_bytes,
-        "caption": message.caption
+        "caption": message.caption,
     }
 
 
-async def get_active_support_session(chat_id: str) -> SupportSession:
-    """Получает или создает сессию поддержки"""
-    chat = await crud.get_or_create_chat(chat_id)
-    support_session = await crud.get_active_session(chat.id)
-    return support_session
-
-
-async def get_chat_history(support_session_messages: list[Message]) -> str | None:
-    """Получает историю чата для сессии"""
-    if len(support_session_messages) == 1:
-        return None
-    return format_chat_from_message(support_session_messages[:-1])
-
-
-async def get_agent_answer(
-    support_session_messages: list[Message],
-    user_message: str
-) -> tuple[str, str | None]:
-    """Получить ответ от агента"""
-    chat_history = await get_chat_history(support_session_messages=support_session_messages)
-    answer = await get_answer(chat_history=chat_history, last_user_message=user_message)
-    return answer, chat_history
-
-
-async def _save_user_message_to_db(
-        has_media_content_flag: bool,
-        support_session: SupportSession,
-        message_text_content: str | None = None,
-        media_data: dict | None = None,
-) -> None:
-    """Сохранить сообщение клиента в БД"""
-    if has_media_content_flag:
-        await crud.add_message(
-            support_session_id=support_session.id,
-            role=MessageRole.user,
-            type=media_data["media_type"],
-        )
-    await crud.add_message(
-        support_session_id=support_session.id,
-        content=message_text_content,
-        role=MessageRole.user,
-        type=MessageType.text
-    )
+if __name__ == "__main__":
+    print(format_chat_from_message(support_session_messages=[]))

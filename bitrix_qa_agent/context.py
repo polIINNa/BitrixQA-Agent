@@ -24,9 +24,14 @@ class ChatModel(BaseModel):
 
 
 class BitrixQAContext(BaseModel):
-    """Контекст графа"""
-    classify_message_model: BaseChatModel = Field(
-        description="Определение типа сообщения",
+    """Контекст QA агента.
+    
+    Используются два типа моделей:
+    - lite_model: быстрая и дешевая модель для простых задач (классификация, выбор статей, генерация ответов)
+    - pro_model: мощная модель для сложных задач (определение смены темы, проверка необходимости ответа, финальная валидация)
+    """
+    lite_model: BaseChatModel = Field(
+        description="Легкая модель для простых задач: классификация, выбор статей, генерация ответов",
         default_factory=lambda: ChatModel(
             provider="openai",
             model="google/gemini-2.5-flash-lite",
@@ -34,36 +39,8 @@ class BitrixQAContext(BaseModel):
                 "temperature": 0
             }
         ).chat_model)
-    prepare_query_model: BaseChatModel = Field(
-        description="Определение сутевого вопроса из диалога",
-        default_factory=lambda: ChatModel(
-            provider="openai",
-            model="google/gemini-2.5-flash-lite",
-            kwargs={
-                "temperature": 0
-            }
-        ).chat_model)
-    get_relevant_articles_model: BaseChatModel = Field(
-        description="Выбор релевантных статей",
-        default_factory=lambda: ChatModel(
-            provider="openai",
-            model="google/gemini-2.5-flash-lite",
-            kwargs={
-                "temperature": 0
-            }
-        ).chat_model)
-    generate_answer_model: BaseChatModel = Field(
-        description="Генерация ответа на вопрос",
-        default_factory=lambda: ChatModel(
-            provider="openai",
-            model="google/gemini-2.5-flash-lite",
-            kwargs={
-                "temperature": 0
-            }
-        ).chat_model)
-
-    admin_answer_model: BaseChatModel = Field(
-        description="Модель для валидации или формирования ответа с учетом tone of voice",
+    pro_model: BaseChatModel = Field(
+        description="Мощная модель для сложных задач: определение смены темы, проверка необходимости ответа, финальная валидация",
         default_factory=lambda: ChatModel(
             provider="openai",
             model="google/gemini-2.5-flash",

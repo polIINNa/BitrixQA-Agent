@@ -1,47 +1,46 @@
-#TODO: подумать над тем, нужно ли вообще определять окончание сессии моделью или будет алгоритмом определяться n последних сообщений и тд
-
 from bitrix_qa_agent.state import InputState
 from bitrix_qa_agent.graph import get_simple_graph
 from bitrix_qa_agent.context import BitrixQAContext
-
-from orchestrator.chains import is_support_session_end_chain, is_new_intent_chain
-from orchestrator.context import OrchestratorContext
 
 from media_recognizer.utils import encode_image
 from media_recognizer.context import MediaRecognizerContext
 from media_recognizer.chains import identify_problem_from_img_chain, image_caption_summarize_chain
 
 
-async def get_answer(chat_history: str | None, last_user_message) -> str:
-    """Получить ответ от QA агента"""
+async def get_answer(
+    chat_history: str | None,
+    last_user_message: str,
+) -> dict:
+    """Получить ответ от QA агента.
+    
+    Args:
+        chat_history: История чата
+        last_user_message: Последнее сообщение пользователя
+        
+    Returns:
+        dict с ключами:
+            - message_type: тип сообщения (negative, no_need_reply, positive_acknowledgement, 
+                           knowledge_required, chat, new_session_required)
+            - answer: ответ на вопрос (может быть None)
+            - is_new_session: требуется ли создание новой сессии
+    """
     context = BitrixQAContext()
     bitrix_qa_graph = get_simple_graph()
     if chat_history is None:
         chat_history = ""
-    _input = InputState(chat_history=chat_history, last_user_message=last_user_message)
+    _input = InputState(
+        chat_history=chat_history,
+        last_user_message=last_user_message,
+    )
     result = await bitrix_qa_graph.ainvoke(
         input=_input,
         context=context
     )
-    if result["user_message_type"] == "objection":
-        return "need_human"
-    else:
-        return result["answer"]
-
-
-async def check_support_session_end(chat: str) -> bool:
-    """Определить, завершена сессия поддержки или нет"""
-    #TODO: создать контекст отдельный для определени окончания сессии
-    context = BitrixQAContext()
-    result = await is_support_session_end_chain(model=context.pro_model).ainvoke(
-        {
-            "chat": chat
-        }
-    )
-    if result == "1":
-        return True
-    else:
-        return False
+    return {
+        "message_type": result["user_message_type"],
+        "answer": result["answer"],
+        "is_new_session": result.get("is_new_session", False),
+    }
 
 
 async def identify_problem_from_img(img_bytes: bytes, caption: str | None = None) -> str:
@@ -72,17 +71,3 @@ async def get_user_message_from_media(type: str, content: bytes, caption: str | 
             return (await identify_problem_from_img(img_bytes=content, caption=caption))
     return None
 
-
-async def is_new_intent_check(chat_history: str, last_user_message: str) -> bool:
-    """Проверить, является ли сообщение клиента новым или относится к завершенному диалогу"""
-    context = OrchestratorContext()
-    res = await is_new_intent_chain(model=context.is_new_intent_model).ainvoke(
-        {
-            "chat_history": chat_history,
-            "last_user_message": last_user_message
-        }
-    )
-    if res == "1":
-        return True
-    else:
-        return False

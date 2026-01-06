@@ -1,42 +1,43 @@
 from langgraph.graph import StateGraph
 from langgraph.constants import START, END
 
+from bitrix_qa_agent.enum import NodeNames
 from bitrix_qa_agent.state import BitrixQAState
 from bitrix_qa_agent.context import BitrixQAContext
 from bitrix_qa_agent.nodes import (
-    prepare_search_query, get_relevant_articles_ids, form_context, generate_answer,
-    classify_message_type, admin_node
+    check_new_intent,
+    admin_node,
+    check_negative,
+    need_reply_check,
+    positive_acknowledgement_check,
+    knowledge_required_check,
+    identify_search_query,
+    get_relevant_articles_ids,
+    form_context,
+    generate_answer
 )
-from bitrix_qa_agent.routing_functions import message_type_routing
+
 
 builder = StateGraph(BitrixQAState, context_schema=BitrixQAContext)
 
+builder.add_node(NodeNames.check_new_intent, check_new_intent)
+builder.add_node(NodeNames.admin_node, admin_node)
+builder.add_node(NodeNames.check_negative, check_negative)
+builder.add_node(NodeNames.need_reply_check, need_reply_check)
+builder.add_node(NodeNames.positive_acknowledgement_check, positive_acknowledgement_check)
+builder.add_node(NodeNames.knowledge_required_check, knowledge_required_check)
+builder.add_node(NodeNames.identify_search_query, identify_search_query)
+builder.add_node(NodeNames.get_relevant_articles_ids, get_relevant_articles_ids)
+builder.add_node(NodeNames.form_context, form_context)
+builder.add_node(NodeNames.generate_answer, generate_answer)
 
-builder.add_node(prepare_search_query.__graphname__, prepare_search_query)
-builder.add_node(classify_message_type.__graphname__, classify_message_type)
-builder.add_node(admin_node.__graphname__, admin_node)
-builder.add_node(get_relevant_articles_ids.__graphname__, get_relevant_articles_ids)
-builder.add_node(form_context.__graphname__, form_context)
-builder.add_node(generate_answer.__graphname__, generate_answer)
+builder.add_edge(START, NodeNames.check_new_intent)
+builder.add_edge(NodeNames.identify_search_query, NodeNames.get_relevant_articles_ids)
+builder.add_edge(NodeNames.get_relevant_articles_ids, NodeNames.form_context)
+builder.add_edge(NodeNames.form_context, NodeNames.generate_answer)
+builder.add_edge(NodeNames.generate_answer, NodeNames.admin_node)
+builder.add_edge(NodeNames.admin_node, END)
 
-builder.add_edge(START, classify_message_type.__graphname__)
-builder.add_conditional_edges(
-    classify_message_type.__graphname__,
-    message_type_routing,
-    {
-        "chat": admin_node.__graphname__,
-        "objection": END,
-        "knowledge_question": prepare_search_query.__graphname__
-    }
-)
-# часть графа с qa
-builder.add_edge(prepare_search_query.__graphname__, get_relevant_articles_ids.__graphname__)
-builder.add_edge(get_relevant_articles_ids.__graphname__, form_context.__graphname__)
-builder.add_edge(form_context.__graphname__, generate_answer.__graphname__)
-builder.add_edge(generate_answer.__graphname__, admin_node.__graphname__)
-
-# часть графа для получения ответа на сообщение
-builder.add_edge(admin_node.__graphname__, END)
 
 def get_simple_graph():
     """Создать простой граф без памяти"""

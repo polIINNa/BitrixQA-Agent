@@ -1,8 +1,6 @@
-from typing import Annotated
 from pydantic import BaseModel, Field
 
-from langchain_core.messages import AnyMessage
-from langgraph.graph.message import add_messages
+from bitrix_qa_agent.enum import UserMessageType
 
 
 class InputState(BaseModel):
@@ -20,5 +18,6 @@ class RAGState(BaseModel):
 
 class BitrixQAState(InputState):
     """Основное состояние графа"""
-    user_message_type: str | None = Field(description="Тип сообщения пользователя", default=None)
+    user_message_type: UserMessageType | None = Field(description="Тип сообщения пользователя", default=None)
+    is_new_session: bool = Field(description="Требуется ли создание новой сессии", default=False)
     answer: str | None = Field(description="Ответ на вопрос", default=None)

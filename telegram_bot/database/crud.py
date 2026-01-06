@@ -6,15 +6,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from telegram_bot.database.base import AsyncSessionLocal
-from telegram_bot.database.models import (
-    Chat,
-    SupportSession,
-    Message,
-    SupportStatus,
-    MessageType,
-    MessageRole,
-    AssistantType,
-)
+from telegram_bot.database.models import Chat, SupportSession, Message
+from telegram_bot.enums import SupportStatus, MessageType, MessageRole, AssistantType
 
 
 async def get_session() -> AsyncSession:

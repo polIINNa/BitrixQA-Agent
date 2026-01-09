@@ -60,7 +60,7 @@ async def admin_node(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) ->
     """Ответить на сообщение пользователя в режиме чата"""
     context = runtime.context or BitrixQAContext()
     chat = f"{state.chat_history}\n<Пользователь>\n{state.last_user_message}</Пользователь>"
-    if state.user_message_type == UserMessageType.KNOWLEDGE_REQUIRED:
+    if state.user_message_type == UserMessageType.KNOWLEDGE_REQUIRED.value:
         raw_answer = state.answer
     else:
         raw_answer = "нет"
@@ -157,7 +157,7 @@ async def knowledge_required_check(
         )
     else:
         return Command(
-            update={"user_message_type": UserMessageType.CHAT},
+            update={"user_message_type": UserMessageType.CHAT.value},
             goto=NodeNames.admin_node
         )
 

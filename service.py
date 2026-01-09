@@ -37,7 +37,7 @@ async def get_answer(
     )
     return {
         "message_type": result["user_message_type"],
-        "answer": result["answer"],
+        "answer": result.get("answer"),
     }
 
 

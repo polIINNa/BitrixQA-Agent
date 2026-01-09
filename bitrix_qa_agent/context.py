@@ -1,3 +1,4 @@
+#TODO: подумать, как задавать модели: по типу pro/lite или по функционалу
 import os
 import httpx
 from pathlib import Path
@@ -24,14 +25,9 @@ class ChatModel(BaseModel):
 
 
 class BitrixQAContext(BaseModel):
-    """Контекст QA агента.
-    
-    Используются два типа моделей:
-    - lite_model: быстрая и дешевая модель для простых задач (классификация, выбор статей, генерация ответов)
-    - pro_model: мощная модель для сложных задач (определение смены темы, проверка необходимости ответа, финальная валидация)
-    """
+    """Контекст QA агента"""
     lite_model: BaseChatModel = Field(
-        description="Легкая модель для простых задач: классификация, выбор статей, генерация ответов",
+        description="Определение типа сообщения",
         default_factory=lambda: ChatModel(
             provider="openai",
             model="google/gemini-2.5-flash-lite",
@@ -40,7 +36,53 @@ class BitrixQAContext(BaseModel):
             }
         ).chat_model)
     pro_model: BaseChatModel = Field(
-        description="Мощная модель для сложных задач: определение смены темы, проверка необходимости ответа, финальная валидация",
+        description="Определение типа сообщения",
+        default_factory=lambda: ChatModel(
+            provider="openai",
+            model="google/gemini-2.5-flash",
+            kwargs={
+                "temperature": 0
+            }
+        ).chat_model)
+    classify_message_model: BaseChatModel = Field(
+        description="Определение типа сообщения",
+        default_factory=lambda: ChatModel(
+            provider="openai",
+            model="google/gemini-2.5-flash-lite",
+            kwargs={
+                "temperature": 0
+            }
+        ).chat_model)
+    prepare_query_model: BaseChatModel = Field(
+        description="Определение сутевого вопроса из диалога",
+        default_factory=lambda: ChatModel(
+            provider="openai",
+            model="google/gemini-2.5-flash-lite",
+            kwargs={
+                "temperature": 0
+            }
+        ).chat_model)
+    get_relevant_articles_model: BaseChatModel = Field(
+        description="Выбор релевантных статей",
+        default_factory=lambda: ChatModel(
+            provider="openai",
+            model="google/gemini-2.5-flash-lite",
+            kwargs={
+                "temperature": 0
+            }
+        ).chat_model)
+    generate_answer_model: BaseChatModel = Field(
+        description="Генерация ответа на вопрос",
+        default_factory=lambda: ChatModel(
+            provider="openai",
+            model="google/gemini-2.5-flash-lite",
+            kwargs={
+                "temperature": 0
+            }
+        ).chat_model)
+
+    admin_answer_model: BaseChatModel = Field(
+        description="Модель для валидации или формирования ответа с учетом tone of voice",
         default_factory=lambda: ChatModel(
             provider="openai",
             model="google/gemini-2.5-flash",

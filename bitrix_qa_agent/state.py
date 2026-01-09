@@ -1,7 +1,5 @@
 from pydantic import BaseModel, Field
 
-from bitrix_qa_agent.enum import UserMessageType
-
 
 class InputState(BaseModel):
     """Входные данные"""
@@ -18,5 +16,5 @@ class RAGState(BaseModel):
 
 class BitrixQAState(InputState):
     """Основное состояние графа"""
-    user_message_type: UserMessageType | None = Field(description="Тип сообщения пользователя", default=None)
+    user_message_type: str | None = Field(description="Тип сообщения пользователя", default=None)
     answer: str | None = Field(description="Ответ на вопрос", default=None)

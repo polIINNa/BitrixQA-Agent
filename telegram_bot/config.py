@@ -18,10 +18,10 @@ class BotConfig:
     @classmethod
     def from_env(cls) -> "BotConfig":
         """Создать конфигурацию из переменных окружения."""
-        token = os.getenv("TELEGRAM_API_TOKEN")
+        token = os.getenv("TELEGRAM_API_TOKEN_TEST")
         tech_support_account_id = os.getenv("TECH_SUPPORT_ACCOUNT_ID")
-        operator_id = os.getenv("OPERATOR_ID")
-        bot_username = os.getenv("BOT_USERNAME")
+        operator_id = os.getenv("OPERATOR_ID_TEST")
+        bot_username = os.getenv("BOT_USERNAME_TEST")
         
         if not all([token, tech_support_account_id, operator_id, bot_username]):
             missing = []

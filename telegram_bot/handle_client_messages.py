@@ -83,7 +83,13 @@ async def handle_client_message(
     # Автоответ (только для личных сообщений)
     if chat_type == ChatType.PRIVATE:
         print("Проверка на автоответчик")
-        if await _should_send_auto_reply(session_id=support_session.id):
+        should_send_auto_reply_check = await _should_send_auto_reply(session_id=support_session.id)
+        if should_send_auto_reply_check:
+            await crud.add_message(
+                support_session_id=support_session.id,
+                content=AUTO_REPLY,
+                role=MessageRole.system
+            )
             await bot.send_message(
                 chat_id=chat_id,
                 text=AUTO_REPLY,
@@ -259,15 +265,9 @@ async def _handle_qa_response(
         )
         return
     
-    # TODO: реализовать отправку сообщений для группы
+    # TODO: реализовать отправку реакции для группы
     if message_type == "no_need_reply":
-        print("Сообщение не требует ответа, проставление реакции")
-        await bot.set_message_reaction(
-            chat_id=support_session.chat_id,
-            message_id=message.message_id,
-            reaction=[ReactionTypeEmoji(emoji="👍")],
-            is_big=False,
-        )
+        print("Сообщение не требует ответа,")
         return
     
     if message_type == "positive_acknowledgement":
@@ -277,6 +277,12 @@ async def _handle_qa_response(
             POSITIVE_ACKNOWLEDGEMENT_REPLY_WITH_AD 
             if should_show_ad 
             else POSITIVE_ACKNOWLEDGEMENT_REPLY_SIMPLE
+        )
+        await crud.add_message(
+            support_session_id=support_session.id,
+            content=reply_text,
+            role=MessageRole.assistant,
+            assistant_type=AssistantType.ai
         )
         await bot.send_message(
             chat_id=support_session.chat_id,

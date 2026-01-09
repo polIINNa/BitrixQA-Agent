@@ -5,6 +5,10 @@ class InputState(BaseModel):
     """Входные данные"""
     chat_history: str = Field(description="История чата", default="")
     last_user_message: str = Field(description="Последнее сообщение пользователя")
+    intent_check_only: bool = Field(
+        description="Режим только проверки интента (без полной обработки)",
+        default=False
+    )
 
 
 class RAGState(BaseModel):

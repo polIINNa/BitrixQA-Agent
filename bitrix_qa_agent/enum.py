@@ -4,6 +4,7 @@ import enum
 class UserMessageType(enum.Enum):
     """Тип сообщения клиента"""
     INTENT_CHANGED = 'intent_changed'
+    NO_INTENT_CHANGE = 'no_intent_change'  # используется в режиме intent_check_only
     NEGATIVE = 'negative'
     NO_NEED_REPLY = 'no_need_reply'
     POSITIVE_ACKNOWLEDGEMENT = 'positive_acknowledgement'

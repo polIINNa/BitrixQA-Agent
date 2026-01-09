@@ -10,17 +10,21 @@ from media_recognizer.chains import identify_problem_from_img_chain, image_capti
 async def get_answer(
     chat_history: str | None,
     last_user_message: str,
+    intent_check_only: bool = False,
 ) -> dict:
     """Получить ответ от QA агента.
     
     Args:
         chat_history: История чата
         last_user_message: Последнее сообщение пользователя
+        intent_check_only: Режим только проверки интента (без полной обработки).
+                          Если True, граф завершится после проверки интента с типом
+                          'intent_changed' или 'no_intent_change'.
         
     Returns:
         dict с ключами:
             - message_type: тип сообщения (negative, no_need_reply, positive_acknowledgement, 
-                           knowledge_required, chat, intent_changed)
+                           knowledge_required, chat, intent_changed, no_intent_change)
             - answer: ответ на вопрос (может быть None)
     """
     context = BitrixQAContext()
@@ -30,6 +34,7 @@ async def get_answer(
     _input = InputState(
         chat_history=chat_history,
         last_user_message=last_user_message,
+        intent_check_only=intent_check_only,
     )
     result = await bitrix_qa_graph.ainvoke(
         input=_input,

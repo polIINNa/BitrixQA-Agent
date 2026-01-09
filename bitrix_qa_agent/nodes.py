@@ -34,8 +34,14 @@ async def check_new_intent(
         state: BitrixQAState, runtime: Runtime[BitrixQAContext]
 ) -> Command[Literal['__end__', NodeNames.check_negative]]:
     """Проверить, сменилась ли тема диалога (новый интент)"""
-    # Если история пуста - это первое сообщение в сессии, пропускаем проверку
+    # Если история пуста - это первое сообщение в сессии
     if not state.chat_history:
+        # В режиме только проверки интента — выходим с NO_INTENT_CHANGE
+        if state.intent_check_only:
+            return Command(
+                update={"user_message_type": UserMessageType.NO_INTENT_CHANGE.value},
+                goto='__end__'
+            )
         return Command(goto=NodeNames.check_negative)
     
     context = runtime.context or BitrixQAContext()
@@ -50,6 +56,13 @@ async def check_new_intent(
     if has_new_intent:
         return Command(
             update={"user_message_type": UserMessageType.INTENT_CHANGED.value},
+            goto='__end__'
+        )
+    
+    # Интент не изменился — в режиме intent_check_only выходим
+    if state.intent_check_only:
+        return Command(
+            update={"user_message_type": UserMessageType.NO_INTENT_CHANGE.value},
             goto='__end__'
         )
     

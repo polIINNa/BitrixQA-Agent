@@ -96,9 +96,31 @@ async def handle_client_message(
                 business_connection_id=message.business_connection_id
             )
     
-    # Если сессию ведёт специалист — сохраняем сообщение и выходим
+    # Если сессию ведёт специалист — проверяем на смену темы
     if support_session.assistant_type == AssistantType.human:
-        print("Сессию ведет специалист, выход из функции")
+        print("Сессию ведет специалист, проверка на смену темы")
+        is_new_intent = await _check_intent_change_for_human_session(
+            support_session=support_session,
+            message_text_content=message_text_content,
+        )
+        
+        if is_new_intent:
+            print("Обнаружена смена темы в сессии специалиста, создание новой AI сессии")
+            await _handle_intent_change(
+                support_session=support_session,
+                chat_type=chat_type,
+                bot=bot,
+                message=message,
+                message_text_content=message_text_content,
+                operator_id=operator_id,
+                tech_support_account_id=tech_support_account_id,
+                followup_tasks=followup_tasks,
+                media_data=media_data,
+            )
+            return
+        
+        # Интент не изменился — просто сохраняем сообщение
+        print("Интент не изменился, сохраняем сообщение для специалиста")
         await _save_user_message_to_db(
             support_session=support_session,
             message_text_content=message_text_content,
@@ -141,6 +163,44 @@ async def _get_or_create_session(
     
     print("Есть действующая сессия, продолжение")
     return support_session
+
+
+# =============================================================================
+# Проверка смены интента
+# =============================================================================
+
+async def _check_intent_change_for_human_session(
+        support_session: SupportSession,
+        message_text_content: str | None,
+) -> bool:
+    """
+    Проверить, сменилась ли тема диалога в сессии, которую ведёт специалист.
+    
+    Использует режим intent_check_only для эффективной проверки без полной
+    обработки сообщения (только 1 вызов LLM вместо 3-5).
+    
+    Returns:
+        True если интент изменился и нужно создать новую AI сессию,
+        False если интент тот же и сообщение останется в текущей сессии.
+    """
+    # Если сообщение не распознано, не можем проверить интент
+    if message_text_content is None:
+        return False
+    
+    # Получаем историю сообщений текущей сессии
+    session_messages = await crud.get_all_messages(support_session.id)
+    chat_history = format_chat_from_message(support_session_messages=session_messages)
+    
+    # Вызываем QA агента в режиме только проверки интента
+    qa_result = await get_answer(
+        chat_history=chat_history,
+        last_user_message=message_text_content,
+        intent_check_only=True,
+    )
+    
+    print(f"Проверка интента для human сессии: {qa_result['message_type']}")
+    
+    return qa_result["message_type"] == "intent_changed"
 
 
 # =============================================================================

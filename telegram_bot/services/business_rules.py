@@ -8,25 +8,22 @@ from telegram_bot.database.models import Message
 logger = logging.getLogger(__name__)
 
 
-async def should_send_auto_reply(session_id: str) -> bool:
+async def should_send_auto_reply(chat_id: str) -> bool:
     """
     Определяет, нужно ли отправить автоответ.
     
-    Автоответ отправляется:
-    - При первом сообщении в первой сессии
-    - Если последнее сообщение было более 14 дней назад
+    Автоответ отправляется, если с последнего сообщения в чате 
+    (независимо от сессии) прошло более 14 дней.
     """
-    session_messages = await crud.get_all_messages(session_id)
+    all_messages = await crud.get_all_messages_by_chat_id(chat_id)
     
-    # Первая сессия и первое сообщение
-    session_number = _get_session_number(session_id)
-    if session_number == 1 and len(session_messages) == 1:
+    # Если сообщений нет — это первое сообщение в чате, отправляем автоответ
+    if not all_messages:
         return True
     
-    # Проверка давности последнего сообщения
-    if not session_messages:
-        return True
-    return _is_message_older_than_days(session_messages[-1], days=14)
+    # Если с последнего сообщения прошло больше 14 дней
+    return _is_message_older_than_days(all_messages[-1], days=14)
+
 
 
 async def should_show_ad_on_positive_acknowledgement(session_id: str) -> bool:
@@ -39,14 +36,6 @@ async def should_show_ad_on_positive_acknowledgement(session_id: str) -> bool:
     if not session_messages:
         return True
     return _is_message_older_than_days(session_messages[-1], days=10)
-
-
-def _get_session_number(session_id: str) -> int:
-    """Извлечь номер сессии из session_id."""
-    try:
-        return int(session_id.rsplit("_", 1)[-1])
-    except (ValueError, IndexError):
-        return 0
 
 
 def _is_message_older_than_days(message: Message, days: int) -> bool:

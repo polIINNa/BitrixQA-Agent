@@ -160,6 +160,18 @@ async def get_all_messages(support_session_id: str) -> list[Message]:
         return list(result.scalars().all())
 
 
+async def get_all_messages_by_chat_id(chat_id: str) -> list[Message]:
+    """Получить все сообщения по chat_id (из всех сессий)."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Message)
+            .join(SupportSession, Message.support_session_id == SupportSession.id)
+            .where(SupportSession.chat_id == chat_id)
+            .order_by(asc(Message.created_at_str))
+        )
+        return list(result.scalars().all())
+
+
 async def update_message_content(message_id: str, new_content: str) -> Optional[Message]:
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Message).where(Message.id == message_id))

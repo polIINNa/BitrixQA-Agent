@@ -73,5 +73,5 @@ async def check_intent_change(session_id: str, user_message: str) -> bool:
         session_id=session_id,
         intent_check_only=True,
     )
-    print(f"Проверка интента: {response.message_type}")
+    print(f"Проверка на смену интента: {response.message_type}")
     return response.message_type == "intent_changed"

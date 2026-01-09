@@ -258,11 +258,8 @@ async def _switch_to_human_specialist(
 ) -> None:
     """Переключить сессию на специалиста и отправить уведомления."""
     support_session_messages = await crud.get_all_messages(support_session_id=support_session.id)
-    user_message_count = sum(
-        1 for msg in support_session_messages if msg.role == MessageRole.user
-    )
-    
-    text = NEED_HUMAN_MESSAGE_WITH_GREETINGS if user_message_count == 1 else NEED_HUMAN_MESSAGE
+
+    text = NEED_HUMAN_MESSAGE_WITH_GREETINGS if len(support_session_messages) < 2 else NEED_HUMAN_MESSAGE
     
     await session_service.switch_to_human(support_session.id)
     
@@ -301,7 +298,7 @@ async def _send_auto_reply_if_needed(
 ) -> None:
     """Отправить автоответ, если нужно."""
     print("Проверка на автоответчик")
-    should_send = await business_rules_service.should_send_auto_reply(session_id=support_session.id)
+    should_send = await business_rules_service.should_send_auto_reply(chat_id=support_session.chat_id)
     
     if should_send:
         await crud.add_message(

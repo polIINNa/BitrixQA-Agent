@@ -1,3 +1,4 @@
+"""Обработка сообщений от специалистов."""
 import logging
 
 from aiogram import types
@@ -28,3 +29,4 @@ async def handle_specialist_message(message: types.Message, chat_id: str) -> Non
         role=MessageRole.assistant,
         assistant_type=AssistantType.human,
     )
+

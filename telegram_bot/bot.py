@@ -1,3 +1,4 @@
+"""Точка входа Telegram бота."""
 import sys
 import asyncio
 import logging
@@ -6,7 +7,7 @@ from aiogram.enums import ParseMode
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.default import DefaultBotProperties
 
-from telegram_bot import handle_specialist_messages, handle_client_messages
+from telegram_bot.handlers import handle_specialist_message, handle_client_message
 from telegram_bot.config import get_config
 from telegram_bot.enums import ChatType
 from telegram_bot.utils import get_chat_id
@@ -23,6 +24,7 @@ bot = Bot(
 # Хранилище задач для отложенных сообщений (напоминаний)
 followup_tasks: dict[str, asyncio.Task] = {}
 
+
 @dp.business_message()
 async def handle_business_message(message: types.Message):
     """Обработка сообщений в бизнес-аккаунте."""
@@ -32,13 +34,13 @@ async def handle_business_message(message: types.Message):
     
     if str(message.from_user.id) == config.tech_support_account_id:
         print("Обработка сообщения специалиста")
-        await handle_specialist_messages.handle_specialist_message(
+        await handle_specialist_message(
             chat_id=chat_id,
             message=message,
         )
     else:
         print("Обработка сообщения пользователя")
-        await handle_client_messages.handle_client_message(
+        await handle_client_message(
             chat_type=ChatType.PRIVATE,
             chat_id=chat_id,
             bot=bot,
@@ -47,6 +49,7 @@ async def handle_business_message(message: types.Message):
             operator_id=config.operator_id,
             tech_support_account_id=config.tech_support_account_id,
         )
+
 
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
 async def handle_group_message(message: types.Message):
@@ -79,7 +82,7 @@ async def _handle_bot_mention(message: types.Message) -> bool:
             print("Упоминание бота")
             await message.reply("Уже обрабатываю запрос!")
             chat_id = get_chat_id(message, ChatType.GROUP)
-            await handle_client_messages.handle_client_message(
+            await handle_client_message(
                 chat_type=ChatType.GROUP,
                 chat_id=chat_id,
                 bot=bot,
@@ -101,7 +104,7 @@ async def _handle_specialist_reply(message: types.Message) -> bool:
     # chat_id формируется по сообщению клиента, на которое отвечает специалист
     client_message = message.reply_to_message
     chat_id = get_chat_id(client_message, ChatType.GROUP)
-    await handle_specialist_messages.handle_specialist_message(
+    await handle_specialist_message(
         chat_id=chat_id,
         message=message,
     )
@@ -121,7 +124,7 @@ async def _handle_client_reply_to_specialist(message: types.Message) -> None:
     if str(replied_message.from_user.id) == config.operator_id:
         print("Обработка ответа клиента на сообщение специалиста")
         chat_id = get_chat_id(message, ChatType.GROUP)
-        await handle_client_messages.handle_client_message(
+        await handle_client_message(
             chat_type=ChatType.GROUP,
             chat_id=chat_id,
             bot=bot,
@@ -133,6 +136,7 @@ async def _handle_client_reply_to_specialist(message: types.Message) -> None:
 
 async def main():
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)

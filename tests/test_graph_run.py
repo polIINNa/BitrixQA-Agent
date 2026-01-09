@@ -2,7 +2,7 @@ import asyncio
 
 from dotenv import load_dotenv
 
-from service import get_answer
+from bitrix_qa_agent.api import invoke_graph
 
 load_dotenv()
 
@@ -187,7 +187,7 @@ test6_3 = {
 }
 
 async def main(test):
-    res = await get_answer(test["chat_history"], test["last_user_message"])
+    res = await invoke_graph(test["chat_history"], test["last_user_message"])
     print(res)
 
 

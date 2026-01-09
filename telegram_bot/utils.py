@@ -1,11 +1,4 @@
-"""Утилиты для работы с Telegram сообщениями."""
-import sys
-from pathlib import Path
-
-# Для запуска файла напрямую (python utils.py)
-if __name__ == "__main__":
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-
+"""Утилиты для работы с Telegram."""
 from aiogram import types, Bot
 from aiogram.enums import ContentType
 
@@ -79,5 +72,10 @@ async def get_media_content(message: types.Message, bot: Bot) -> dict:
     }
 
 
-if __name__ == "__main__":
-    print(format_chat_from_message(support_session_messages=[]))
+__all__ = [
+    "get_chat_id",
+    "format_chat_from_message",
+    "has_media_content",
+    "get_media_content",
+]
+

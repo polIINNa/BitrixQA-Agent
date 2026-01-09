@@ -1,4 +1,5 @@
 import uuid
+import datetime
 from typing import Optional
 
 from sqlalchemy import select, asc
@@ -132,8 +133,6 @@ async def add_message(
     assistant_type: AssistantType | None = None,
     type: MessageType = MessageType.text
 ) -> Message:
-    import datetime
-
     async with AsyncSessionLocal() as session:
         now_iso = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
         message = Message(

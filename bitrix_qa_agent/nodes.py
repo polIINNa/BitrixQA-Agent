@@ -8,6 +8,7 @@ from langgraph.runtime import Runtime
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.exceptions import OutputParserException
 
 from bitrix_qa_agent.context import BitrixQAContext
 from bitrix_qa_agent.state import BitrixQAState, RAGState
@@ -113,8 +114,10 @@ async def need_reply_check(
     """Определить необходимость ответа"""
     context = runtime.context or BitrixQAContext()
     chain = NEED_REPLY_PROMPT | context.pro_model.with_structured_output(NeedReplyModel)
-    #TODO: сделать chain_with_retry
-    need_reply = (await chain.ainvoke(
+    chain_with_retry = chain.with_retry(
+        retry_if_exception_type=(OutputParserException,), stop_after_attempt=3
+    )
+    need_reply = (await chain_with_retry.ainvoke(
         {
             "chat_history": state.chat_history,
             "last_user_message": state.last_user_message
@@ -199,7 +202,10 @@ async def get_relevant_articles_ids(state: RAGState, runtime: Runtime[BitrixQACo
     async def get_relevant_articles_ids_batch(_input: dict) -> list | None:
         """Получить ids по одному батчу"""
         chain = CHOOSE_ARTICLES_PROMPT | context.lite_model.with_structured_output(ArticleRelevantIDSModel)
-        relevant_articles_ids_result = (await chain.ainvoke({
+        chain_with_retry = chain.with_retry(
+        retry_if_exception_type=(OutputParserException,), stop_after_attempt=3
+        )
+        relevant_articles_ids_result = (await chain_with_retry.ainvoke({
             "articles_metadata": _input["articles_metadata"],
             "query": _input["query"]
         })).relevant_articles_ids

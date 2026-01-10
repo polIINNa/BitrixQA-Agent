@@ -22,8 +22,7 @@ from telegram_bot.constants import (
 )
 from telegram_bot.services import session as session_service
 from telegram_bot.services import qa as qa_service
-from telegram_bot.services import notification as notification_service
-from telegram_bot.services import business_rules as business_rules_service
+from telegram_bot.services import chat_flow as chat_flow_service
 from telegram_bot.services.qa import QAResponse
 from media_recognizer.api import extract_text_from_media
 
@@ -54,7 +53,7 @@ async def handle_client_message(
         tech_support_account_id: id аккаунта поддержки (для личных сообщений)
     """
     # Отменяем предыдущую задачу напоминания
-    notification_service.cancel_followup(chat_id, followup_tasks)
+    chat_flow_service.cancel_followup(chat_id, followup_tasks)
     
     # Обработка медиа-контента
     media_data = await _extract_message_content(message, bot)
@@ -62,11 +61,7 @@ async def handle_client_message(
     
     # Получение или создание сессии
     support_session = await session_service.get_or_create_active_session(chat_id=chat_id)
-    
-    # Автоответ (только для личных сообщений)
-    if chat_type == ChatType.PRIVATE:
-        await _send_auto_reply_if_needed(bot, message, support_session)
-    
+
     # Если невозможно распознать текст сообщения
     if message_text_content is None:
         print("Невозможно извлечь текст из сообщения")
@@ -80,22 +75,26 @@ async def handle_client_message(
             media_data=media_data,
         )
         return
-    
+
     # Проверка смены интента (для всех типов сессий: и ai и human)
     is_new_intent = await qa_service.check_intent_change(
         session_id=support_session.id,
         user_message=message_text_content,
     )
-    
+
     # Если интент изменился — создаём новую AI сессию
     if is_new_intent:
         print("Обнаружена смена темы, создание новой AI сессии")
         await session_service.close_session(support_session.id)
         support_session = await session_service.create_new_session(chat_id=support_session.chat_id)
-    
+
     # Сохраняем сообщение в актуальной сессии
     await _save_user_message(support_session, message_text_content, media_data)
     
+    # Автоответ (только для личных сообщений)
+    if chat_type == ChatType.PRIVATE:
+        await _send_auto_reply_if_needed(bot, message, support_session)
+
     # Если интент не менялся и сессию ведёт специалист — выходим
     # (новая сессия после смены интента всегда AI)
     if not is_new_intent and support_session.assistant_type == AssistantType.human:
@@ -298,7 +297,7 @@ async def _send_auto_reply_if_needed(
 ) -> None:
     """Отправить автоответ, если нужно."""
     print("Проверка на автоответчик")
-    should_send = await business_rules_service.should_send_auto_reply(chat_id=support_session.chat_id)
+    should_send = await chat_flow_service.should_send_auto_reply(chat_id=support_session.chat_id)
     
     if should_send:
         await crud.add_message(
@@ -319,8 +318,8 @@ async def _send_positive_acknowledgement_reply(
     support_session: SupportSession,
 ) -> None:
     """Отправить ответ на положительный отклик."""
-    should_show_ad = await business_rules_service.should_show_ad_on_positive_acknowledgement(
-        session_id=support_session.id
+    should_show_ad = await chat_flow_service.should_show_ad_on_positive_acknowledgement(
+        chat_id=support_session.chat_id
     )
     reply_text = (
         POSITIVE_ACKNOWLEDGEMENT_REPLY_WITH_AD 
@@ -370,7 +369,7 @@ async def _send_ai_answer(
         await message.reply(text=answer)
     
     # Планирование напоминания
-    await notification_service.schedule_followup(
+    await chat_flow_service.schedule_followup(
         chat_type=chat_type,
         message=message,
         support_session_id=support_session.id,

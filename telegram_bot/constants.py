@@ -11,4 +11,5 @@ CHECK_USER_MESSAGE = """Подскажите, пожалуйста, всё ли 
 """
 POSITIVE_ACKNOWLEDGEMENT_REPLY_SIMPLE = """Отлично! Если возникнут вопросы обращайтесь, наши специалисты помогут."""
 
-POSITIVE_ACKNOWLEDGEMENT_REPLY_WITH_AD = """"""
+POSITIVE_ACKNOWLEDGEMENT_REPLY_WITH_AD = """Отлично. 
+Все задачи бизнеса можно решать с нами: изменения бизнес-процессов, AI решения, создание контента, управленческий консалтинг – подробности на сайте agencymaks.ru"""

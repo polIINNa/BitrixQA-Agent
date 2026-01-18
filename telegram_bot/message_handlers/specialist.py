@@ -1,10 +1,11 @@
-"""Обработка сообщений от специалистов."""
+"""Обработка сообщений от специалиста."""
 import logging
 
 from aiogram import types
 
 from telegram_bot.database import crud
 from telegram_bot.enums import MessageRole, AssistantType
+
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ async def handle_specialist_message(message: types.Message, chat_id: str) -> Non
     Обработать сообщение специалиста.
     
     Args:
-        message: Telegram сообщение от специалиста
+        message: Сообщение от специалиста
         chat_id: идентификатор чата
     """
     support_session = await crud.get_active_session(chat_id=chat_id)
@@ -29,4 +30,3 @@ async def handle_specialist_message(message: types.Message, chat_id: str) -> Non
         role=MessageRole.assistant,
         assistant_type=AssistantType.human,
     )
-

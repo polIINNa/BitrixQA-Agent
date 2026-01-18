@@ -7,8 +7,8 @@ from aiogram.methods import ReadBusinessMessage
 from telegram_bot.database import crud
 from telegram_bot.database.models import SupportSession
 from telegram_bot.enums import (
-    ChatType,
     AssistantType,
+    ChatType,
     MessageRole,
     MessageType,
 )
@@ -20,7 +20,7 @@ from telegram_bot.constants import (
     NEED_HUMAN_MESSAGE_WITH_GREETINGS,
     NEED_HUMAN_MESSAGE,
 )
-from telegram_bot.services import session as session_service
+from telegram_bot.enums import SupportStatus
 from telegram_bot.services import qa as qa_service
 from telegram_bot.services import chat_flow as chat_flow_service
 from telegram_bot.services.qa import QAResponse
@@ -28,7 +28,7 @@ from media_recognizer.api import extract_text_from_media
 
 
 # =============================================================================
-# Главный обработчик
+# Главный обработчик сообщения пользователя
 # =============================================================================
 
 async def handle_client_message(
@@ -54,13 +54,13 @@ async def handle_client_message(
     """
     # Отменяем предыдущую задачу напоминания
     chat_flow_service.cancel_followup(chat_id, followup_tasks)
+
+    # Получение или создание сессии
+    support_session = await crud.get_or_create_active_session(chat_id=chat_id)
     
     # Обработка медиа-контента
     media_data = await _extract_message_content(message, bot)
     message_text_content = media_data["text_content"]
-    
-    # Получение или создание сессии
-    support_session = await session_service.get_or_create_active_session(chat_id=chat_id)
 
     # Если невозможно распознать текст сообщения
     if message_text_content is None:
@@ -76,7 +76,14 @@ async def handle_client_message(
         )
         return
 
-    # Проверка смены интента (для всех типов сессий: и ai и human)
+    # Если сессию ведёт специалист — сохраняем сообщение и выходим (без проверки интента)
+    if support_session.assistant_type == AssistantType.human:
+        await _save_user_message(support_session, message_text_content, media_data)
+        print("Сессию ведёт специалист, сообщение сохранено")
+        return
+    print("Сессию ведёт AI-помощник")
+
+    # Проверка смены интента (только для AI сессий)
     is_new_intent = await qa_service.check_intent_change(
         session_id=support_session.id,
         user_message=message_text_content,
@@ -85,8 +92,8 @@ async def handle_client_message(
     # Если интент изменился — создаём новую AI сессию
     if is_new_intent:
         print("Обнаружена смена темы, создание новой AI сессии")
-        await session_service.close_session(support_session.id)
-        support_session = await session_service.create_new_session(chat_id=support_session.chat_id)
+        await crud.update_session_status(session_id=support_session.id, status=SupportStatus.end)
+        support_session = await crud.create_support_session(chat_id=support_session.chat_id)
 
     # Сохраняем сообщение в актуальной сессии
     await _save_user_message(support_session, message_text_content, media_data)
@@ -94,15 +101,8 @@ async def handle_client_message(
     # Автоответ (только для личных сообщений)
     if chat_type == ChatType.PRIVATE:
         await _send_auto_reply_if_needed(bot, message, support_session)
-
-    # Если интент не менялся и сессию ведёт специалист — выходим
-    # (новая сессия после смены интента всегда AI)
-    if not is_new_intent and support_session.assistant_type == AssistantType.human:
-        print("Сессию ведёт специалист, сообщение сохранено")
-        return
     
     # AI сессия: отметка о прочтении (только для личных сообщений)
-    print("Сессию ведёт AI-помощник")
     if chat_type == ChatType.PRIVATE:
         await bot(
             ReadBusinessMessage(
@@ -260,7 +260,7 @@ async def _switch_to_human_specialist(
 
     text = NEED_HUMAN_MESSAGE_WITH_GREETINGS if len(support_session_messages) < 2 else NEED_HUMAN_MESSAGE
     
-    await session_service.switch_to_human(support_session.id)
+    await crud.update_session_assistant_type(session_id=support_session.id, assistant_type=AssistantType.human)
     
     if chat_type == ChatType.PRIVATE:
         await bot.send_message(

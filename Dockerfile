@@ -21,10 +21,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем весь проект
 COPY . .
 
+# Делаем entrypoint исполняемым
+RUN chmod +x entrypoint.sh
+
 # Устанавливаем переменную окружения для Python
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Команда для запуска бота
-CMD ["python", "telegram_bot/bot.py"]
+# Используем entrypoint для миграций + запуск бота
+ENTRYPOINT ["./entrypoint.sh"]
 

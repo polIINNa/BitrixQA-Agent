@@ -8,16 +8,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from telegram_bot.database.base import AsyncSessionLocal
 from telegram_bot.database.models import Chat, SupportSession, Message
-from telegram_bot.enums import SupportStatus, MessageType, MessageRole, AssistantType
+from telegram_bot.enums import SupportStatus, MessageType, MessageRole, AssistantType, ChatType
 
 
-async def get_session() -> AsyncSession:
+async def _get_session() -> AsyncSession:
     return AsyncSessionLocal()
 
 
-async def create_chat(chat_id: str) -> Chat:
+async def _create_chat(
+    chat_id: str,
+    username: str | None = None,
+    chat_type: ChatType | None = None
+) -> Chat:
     async with AsyncSessionLocal() as session:
-        chat = Chat(id=chat_id)
+        chat = Chat(id=chat_id, username=username, chat_type=chat_type)
         session.add(chat)
         try:
             await session.commit()
@@ -30,23 +34,75 @@ async def create_chat(chat_id: str) -> Chat:
         return chat
 
 
-async def get_chat(chat_id: str) -> Optional[Chat]:
+async def get_chat(
+    chat_id: str | None = None,
+    *,
+    username: str | None = None,
+    chat_type: ChatType | None = None
+) -> Optional[Chat]:
+    """
+    Получить чат по chat_id или по username + chat_type.
+    
+    Варианты использования:
+    - get_chat(chat_id="123") — поиск по ID чата
+    - get_chat(username="polina", chat_type=ChatType.PRIVATE) — поиск по username и типу чата
+    """
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Chat).where(Chat.id == chat_id))
+        if chat_id is not None:
+            result = await session.execute(select(Chat).where(Chat.id == chat_id))
+        elif username is not None and chat_type is not None:
+            result = await session.execute(
+                select(Chat).where(Chat.username == username, Chat.chat_type == chat_type)
+            )
+        else:
+            raise ValueError("Укажите chat_id или пару username + chat_type")
         return result.scalar_one_or_none()
 
 
-async def get_or_create_chat(chat_id: str) -> Chat:
+async def get_or_create_chat(
+    chat_id: str,
+    username: str | None = None,
+    chat_type: ChatType | None = None
+) -> Chat:
     chat = await get_chat(chat_id)
     if chat is None:
-        chat = await create_chat(chat_id)
+        chat = await _create_chat(chat_id, username=username, chat_type=chat_type)
+    else:
+        needs_update = False
+        if username and chat.username != username:
+            needs_update = True
+        if chat_type and chat.chat_type != chat_type:
+            needs_update = True
+        if needs_update:
+            chat = await _update_chat(chat_id, username=username, chat_type=chat_type)
     return chat
 
 
-async def exists_chat(chat_id: str) -> bool:
+async def _exists_chat(chat_id: str) -> bool:
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Chat.id).where(Chat.id == chat_id))
         return result.scalar_one_or_none() is not None
+
+
+async def _update_chat(
+    chat_id: str,
+    username: str | None = None,
+    chat_type: ChatType | None = None
+) -> Optional[Chat]:
+    """Обновить username и/или chat_type чата."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Chat).where(Chat.id == chat_id))
+        chat = result.scalar_one_or_none()
+        if chat is None:
+            return None
+        if username is not None:
+            chat.username = username
+        if chat_type is not None:
+            chat.chat_type = chat_type
+        await session.commit()
+        await session.refresh(chat)
+        return chat
+
 
 async def create_support_session(
     chat_id: str,
@@ -90,7 +146,27 @@ async def get_active_session(chat_id: str) -> SupportSession | None:
         return result.scalars().first()
 
 
-async def get_latest_session(chat_id: str) -> SupportSession | None:
+async def get_or_create_active_session(chat_id: str) -> SupportSession:
+    """
+    Получить активную сессию или создать новую.
+    
+    Args:
+        chat_id: идентификатор чата
+        
+    Returns:
+        Активная или новая сессия поддержки
+    """
+    active_session = await get_active_session(chat_id)
+    
+    if active_session is None:
+        print("Нет действующей сессии, создание новой")
+        return await create_support_session(chat_id=chat_id)
+    
+    print("Есть действующая сессия, продолжение")
+    return active_session
+
+
+async def _get_latest_session(chat_id: str) -> SupportSession | None:
     """Получить последнюю сессию"""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
@@ -172,7 +248,7 @@ async def get_all_messages_by_chat_id(chat_id: str) -> list[Message]:
         return list(result.scalars().all())
 
 
-async def update_message_content(message_id: str, new_content: str) -> Optional[Message]:
+async def _update_message_content(message_id: str, new_content: str) -> Optional[Message]:
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Message).where(Message.id == message_id))
         message = result.scalar_one_or_none()
@@ -184,7 +260,7 @@ async def update_message_content(message_id: str, new_content: str) -> Optional[
         return message
 
 
-async def delete_message(message_id: str) -> bool:
+async def _delete_message(message_id: str) -> bool:
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Message).where(Message.id == message_id))
         message = result.scalar_one_or_none()
@@ -194,4 +270,30 @@ async def delete_message(message_id: str) -> bool:
         await session.commit()
         return True
 
+
+async def get_all_chats_with_latest_sessions() -> list[tuple[Chat, SupportSession | None]]:
+    """
+    Получить все чаты с их последней сессией.
+    
+    Returns:
+        Список кортежей (Chat, SupportSession | None) для всех чатов.
+    """
+    async with AsyncSessionLocal() as session:
+        # Получаем все чаты
+        chats_result = await session.execute(select(Chat).order_by(Chat.username))
+        chats = list(chats_result.scalars().all())
+        
+        result = []
+        for chat in chats:
+            # Для каждого чата получаем последнюю сессию
+            session_result = await session.execute(
+                select(SupportSession)
+                .where(SupportSession.chat_id == chat.id)
+                .order_by(SupportSession.created_at.desc())
+                .limit(1)
+            )
+            latest_session = session_result.scalar_one_or_none()
+            result.append((chat, latest_session))
+        
+        return result
 

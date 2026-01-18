@@ -5,14 +5,15 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from telegram_bot.database.config import Base
-from telegram_bot.enums import SupportStatus, MessageType, MessageRole, AssistantType
+from telegram_bot.enums import SupportStatus, MessageType, MessageRole, AssistantType, ChatType
 
 
 class Chat(Base):
     __tablename__ = "chats"
 
     id = Column(String, primary_key=True)
-
+    username = Column(String, nullable=True, index=True)
+    chat_type = Column(Enum(ChatType, native_enum=False), nullable=True)
     sessions = relationship("SupportSession", back_populates="chat", cascade="all, delete-orphan")
 
 

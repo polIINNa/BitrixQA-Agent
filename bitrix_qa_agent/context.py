@@ -17,9 +17,6 @@ class ChatModel(BaseModel):
     def chat_model(self) -> BaseChatModel:
         self.kwargs["api_key"] = os.getenv("OPENROUTER_API_KEY")
         self.kwargs["base_url"] = "https://openrouter.ai/api/v1"
-        self.kwargs["http_async_client"] = httpx.AsyncClient(
-            proxy=f"http://{os.getenv('PROXY_LOGIN')}:{os.getenv('PROXY_PASSWORD')}@{os.getenv('PROXY_HOST')}:{os.getenv('PROXY_PORT')}"
-        )
         return init_chat_model(model_provider=self.provider, model=self.model, **self.kwargs)
 
 

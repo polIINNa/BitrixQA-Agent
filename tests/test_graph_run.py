@@ -1,8 +1,12 @@
 import asyncio
+import os
 
+import httpx
 from dotenv import load_dotenv
 
 from bitrix_qa_agent.api import invoke_graph
+from langchain_openai import ChatOpenAI
+from bitrix_qa_agent.context import BitrixQAContext
 
 load_dotenv()
 
@@ -238,6 +242,18 @@ test_t2 = {
 }
 
 async def main(test):
+    context = BitrixQAContext()
+
+    # model = ChatOpenAI(
+    #     model='google/gemini-2.5-flash-lite',
+    #     api_key=os.getenv("OPENROUTER_API_KEY"),
+    #     base_url='https://openrouter.ai/api/v1',
+    #     # http_async_client=httpx.AsyncClient(
+    #     #     auth=(os.getenv('PROXY_LOGIN'), os.getenv('PROXY_PASSWORD')),
+    #     #     proxy=f"http://{os.getenv('PROXY_HOST')}:{os.getenv('PROXY_PORT')}",
+    #     # )
+    # )
+    # res = await model.ainvoke('Привет, это проверка связи')
     res = await invoke_graph(test["chat_history"], test["last_user_message"])
     print(res)
 

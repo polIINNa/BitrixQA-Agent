@@ -39,7 +39,7 @@ async def identify_problem_from_image(
 
 async def extract_text_from_media(
     media_type: str,
-    content: bytes,
+    content: bytes | None,
     caption: str | None = None,
 ) -> str | None:
     """
@@ -53,6 +53,9 @@ async def extract_text_from_media(
     Returns:
         Текстовое описание или None если тип не поддерживается
     """
+    if content is None:
+        return None
+
     # TODO: добавить поддержку других медиа-типов
     if media_type == "photo":
         return await identify_problem_from_image(img_bytes=content, caption=caption)

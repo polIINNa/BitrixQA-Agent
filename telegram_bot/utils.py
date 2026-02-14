@@ -40,34 +40,39 @@ def has_media_content(message: types.Message) -> bool:
 
 async def get_media_content(message: types.Message, bot: Bot) -> dict:
     """Получить медиа-контент из сообщения."""
-    media_type: ContentType
-    file_info = None
-    
+    media_type: str
+
+    # определение media_type и file_info
     if message.photo:
-        media_type = ContentType.PHOTO
+        media_type = ContentType.PHOTO.value
         file_info = await bot.get_file(message.photo[-1].file_id)
     elif message.video:
-        media_type = ContentType.VIDEO
+        media_type = ContentType.VIDEO.value
         file_info = await bot.get_file(message.video.file_id)
     elif message.animation:
-        media_type = ContentType.ANIMATION
+        media_type = ContentType.ANIMATION.value
         file_info = await bot.get_file(message.animation.file_id)
     elif message.audio:
-        media_type = ContentType.AUDIO
+        media_type = ContentType.AUDIO.value
         file_info = await bot.get_file(message.audio.file_id)
     elif message.voice:
-        media_type = ContentType.VOICE
+        media_type = ContentType.VOICE.value
         file_info = await bot.get_file(message.voice.file_id)
     elif message.document:
-        media_type = ContentType.DOCUMENT
+        media_type = ContentType.DOCUMENT.value
         file_info = await bot.get_file(message.document.file_id)
     else:
-        raise ValueError("Неподдерживаемый тип медиа-контента")
-    
-    file_bytes = await bot.download_file(file_info.file_path)
+        media_type = 'unknown'
+
+    # определение file_bytes
+    if media_type != 'unknown':
+        file_bytes_data = await bot.download_file(file_info.file_path)
+        file_bytes = file_bytes_data.getvalue() if hasattr(file_bytes_data, 'getvalue') else file_bytes_data
+    else:
+        file_bytes = None
     return {
-        "media_type": media_type.value,
-        "content": file_bytes.getvalue() if hasattr(file_bytes, 'getvalue') else file_bytes,
+        "media_type": media_type,
+        "content": file_bytes,
         "caption": message.caption,
     }
 

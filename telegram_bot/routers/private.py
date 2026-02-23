@@ -1,5 +1,6 @@
 """Роутер для бизнес-сообщений (личные чаты через бизнес-аккаунт)."""
 import asyncio
+import logging
 
 from aiogram import Bot, types, Router
 
@@ -10,6 +11,7 @@ from telegram_bot.utils import get_chat_id
 from telegram_bot.message_handlers.client import handle_client_message
 from telegram_bot.message_handlers.specialist import handle_specialist_message
 
+logger = logging.getLogger(__name__)
 
 config = get_config()
 
@@ -24,22 +26,19 @@ async def handle_business_message(
     followup_tasks: dict[str, asyncio.Task],
 ):
     """Обработка сообщений в бизнес-аккаунте."""
-    print(f"Обработка бизнес-сообщения: {message.text}")
-    
     chat_id = get_chat_id(message, ChatType.PRIVATE)
-    
+
     if str(message.from_user.id) == config.tech_support_account_id:
-        print("Обработка сообщения специалиста")
+        logger.info(f"Обработка сообщения специалиста (chat_id={chat_id})")
         await handle_specialist_message(
             chat_id=chat_id,
             message=message,
         )
     else:
-        print("Обработка сообщения пользователя")
-        # Создаём/обновляем чат с username пользователя
+        logger.info(f"Обработка бизнес-сообщения от пользователя (chat_id={chat_id})")
         user_username = message.from_user.username if message.from_user else None
         await crud.get_or_create_chat(chat_id=chat_id, username=user_username, chat_type=ChatType.PRIVATE)
-        
+
         await handle_client_message(
             chat_type=ChatType.PRIVATE,
             chat_id=chat_id,

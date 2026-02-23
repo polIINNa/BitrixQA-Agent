@@ -1,5 +1,6 @@
 """Обработка сообщений от клиентов."""
 import asyncio
+import logging
 
 from aiogram import Bot, types
 from aiogram.methods import ReadBusinessMessage
@@ -11,8 +12,15 @@ from telegram_bot.enums import (
     ChatType,
     MessageRole,
     MessageType,
+    SupportStatus,
 )
-from telegram_bot.utils import has_media_content, get_media_content
+from telegram_bot.utils import (
+    MediaData,
+    has_media_content,
+    get_media_content,
+    get_message_media_type,
+    content_type_to_message_type,
+)
 from telegram_bot.constants import (
     AUTO_REPLY,
     POSITIVE_ACKNOWLEDGEMENT_REPLY_WITH_AD,
@@ -20,11 +28,12 @@ from telegram_bot.constants import (
     NEED_HUMAN_MESSAGE_WITH_GREETINGS,
     NEED_HUMAN_MESSAGE,
 )
-from telegram_bot.enums import SupportStatus
 from telegram_bot.services import qa as qa_service
 from telegram_bot.services import chat_flow as chat_flow_service
 from telegram_bot.services.qa import QAResponse
 from media_recognizer.api import extract_text_from_media
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -42,7 +51,7 @@ async def handle_client_message(
 ) -> None:
     """
     Обработчик сообщений от пользователя.
-    
+
     Args:
         chat_type: тип чата (личные сообщения или группа)
         chat_id: идентификатор чата
@@ -57,14 +66,22 @@ async def handle_client_message(
 
     # Получение или создание сессии
     support_session = await crud.get_or_create_active_session(chat_id=chat_id)
-    
-    # Обработка медиа-контента
+
+    # Если сессию ведёт специалист — сохраняем сырое сообщение без LLM-обработки
+    if support_session.assistant_type == AssistantType.human:
+        await _save_human_session_message(support_session, message)
+        logger.info("Сессию ведёт специалист, сообщение сохранено")
+        return
+
+    logger.info("Сессию ведёт AI-помощник")
+
+    # Обработка медиа-контента (только для AI-сессий)
     media_data = await _extract_message_content(message, bot)
     message_text_content = media_data["text_content"]
 
     # Если невозможно распознать текст сообщения
     if message_text_content is None:
-        print("Невозможно извлечь текст из сообщения")
+        logger.info("Невозможно извлечь текст из сообщения")
         await _handle_unrecognized_message(
             support_session=support_session,
             chat_type=chat_type,
@@ -76,33 +93,33 @@ async def handle_client_message(
         )
         return
 
-    # Если сессию ведёт специалист — сохраняем сообщение и выходим (без проверки интента)
-    if support_session.assistant_type == AssistantType.human:
-        await _save_user_message(support_session, message_text_content, media_data)
-        print("Сессию ведёт специалист, сообщение сохранено")
-        return
-    print("Сессию ведёт AI-помощник")
-
-    # Проверка смены интента (только для AI сессий)
-    is_new_intent = await qa_service.check_intent_change(
-        session_id=support_session.id,
+    # Получаем ответ от QA агента (до сохранения, чтобы история была чистой)
+    # Внутри графа первым шагом идёт проверка смены интента
+    qa_response = await qa_service.get_response(
         user_message=message_text_content,
+        session_id=support_session.id,
     )
 
-    # Если интент изменился — создаём новую AI сессию
-    if is_new_intent:
-        print("Обнаружена смена темы, создание новой AI сессии")
+    # Если интент изменился — закрываем текущую сессию и открываем новую
+    if qa_response.message_type == "intent_changed":
+        logger.info("Обнаружена смена темы, создание новой сессии")
         await crud.update_session_status(session_id=support_session.id, status=SupportStatus.end)
         support_session = await crud.create_support_session(chat_id=support_session.chat_id)
+        # Сохраняем сообщение в новой сессии и получаем ответ заново
+        await _save_user_message(support_session, message_text_content, media_data)
+        qa_response = await qa_service.get_response(
+            user_message=message_text_content,
+            session_id=support_session.id,
+        )
+    else:
+        # Сохраняем сообщение в текущей сессии
+        await _save_user_message(support_session, message_text_content, media_data)
 
-    # Сохраняем сообщение в актуальной сессии
-    await _save_user_message(support_session, message_text_content, media_data)
-    
     # Автоответ (только для личных сообщений)
     if chat_type == ChatType.PRIVATE:
         await _send_auto_reply_if_needed(bot, message, support_session)
-    
-    # AI сессия: отметка о прочтении (только для личных сообщений)
+
+    # Отметка о прочтении (только для личных сообщений)
     if chat_type == ChatType.PRIVATE:
         await bot(
             ReadBusinessMessage(
@@ -111,15 +128,7 @@ async def handle_client_message(
                 message_id=message.message_id
             )
         )
-    
-    # Получаем ответ от QA агента
-    qa_response = await qa_service.get_response(
-        user_message=message_text_content,
-        session_id=support_session.id,
-    )
-    
-    print(f"Обработка ответа QA агента: {qa_response.message_type}")
-    
+
     # Обработка ответа
     await _handle_qa_response(
         qa_response=qa_response,
@@ -137,20 +146,20 @@ async def handle_client_message(
 # Извлечение контента сообщения
 # =============================================================================
 
-async def _extract_message_content(message: types.Message, bot: Bot) -> dict:
-    """Извлечь контент из сообщения (текст или медиа)."""
+async def _extract_message_content(message: types.Message, bot: Bot) -> MediaData:
+    """Извлечь контент из сообщения (текст или медиа через LLM)."""
     if has_media_content(message):
-        print("Сообщение клиента содержит медиа-контент")
+        logger.info("Сообщение клиента содержит медиа-контент")
         media_data = await get_media_content(message, bot)
-        text_content = await extract_text_from_media(
+        media_data["text_content"] = await extract_text_from_media(
             media_type=media_data["media_type"],
             content=media_data["content"],
-            caption=media_data.get("caption"),
+            caption=media_data["caption"],
         )
-        return {**media_data, "text_content": text_content}
-    
-    print("Сообщение клиента просто текст")
-    return {"text_content": message.text, "media_type": None, "content": None}
+        return media_data
+
+    logger.info("Сообщение клиента — просто текст")
+    return MediaData(text_content=message.text, media_type=None, content=None, caption=None)
 
 
 # =============================================================================
@@ -164,21 +173,13 @@ async def _handle_unrecognized_message(
     message: types.Message,
     operator_id: str,
     tech_support_account_id: str | None = None,
-    media_data: dict | None = None,
+    media_data: MediaData | None = None,
 ) -> None:
     """Обработка сообщения, которое невозможно распознать."""
-    print("Невозможно распознать текст сообщения")
-    
-    # Сохраняем сообщение
     await _save_user_message(support_session, None, media_data)
-    
-    # Если сессию ведёт специалист — выходим
-    if support_session.assistant_type == AssistantType.human:
-        print("Сессию ведёт специалист, сообщение сохранено")
-        return
-    
+
     # AI сессия — переключаем на специалиста
-    print("Переключение на специалиста: невозможно определить сообщение")
+    logger.info("Переключение на специалиста: невозможно определить сообщение")
     await _switch_to_human_specialist(
         chat_type=chat_type,
         support_session=support_session,
@@ -205,10 +206,10 @@ async def _handle_qa_response(
 ) -> None:
     """Обработка результата QA агента."""
     message_type = qa_response.message_type
-    
+
     # Переключение на специалиста
     if message_type == "negative":
-        print("Переключение диалога на специалиста")
+        logger.info("Переключение диалога на специалиста")
         await _switch_to_human_specialist(
             chat_type=chat_type,
             support_session=support_session,
@@ -218,21 +219,21 @@ async def _handle_qa_response(
             tech_support_account_id=tech_support_account_id,
         )
         return
-    
+
     # Не требует ответа
     if message_type == "no_need_reply":
-        print("Сообщение не требует ответа")
+        logger.info("Сообщение не требует ответа")
         return
-    
+
     # Положительный отклик
     if message_type == "positive_acknowledgement":
-        print("Сообщение является положительным откликом")
+        logger.info("Сообщение является положительным откликом")
         await _send_positive_acknowledgement_reply(bot, message, support_session)
         return
-    
+
     # Ответ из базы знаний или чат
     if message_type in ("knowledge_required", "chat"):
-        print("Поиск ответа в базе знаний либо простой чат")
+        logger.info("Поиск ответа в базе знаний либо простой чат")
         await _send_ai_answer(
             bot=bot,
             chat_type=chat_type,
@@ -259,9 +260,9 @@ async def _switch_to_human_specialist(
     support_session_messages = await crud.get_all_messages(support_session_id=support_session.id)
 
     text = NEED_HUMAN_MESSAGE_WITH_GREETINGS if len(support_session_messages) < 2 else NEED_HUMAN_MESSAGE
-    
+
     await crud.update_session_assistant_type(session_id=support_session.id, assistant_type=AssistantType.human)
-    
+
     if chat_type == ChatType.PRIVATE:
         await bot.send_message(
             chat_id=support_session.chat_id,
@@ -296,9 +297,8 @@ async def _send_auto_reply_if_needed(
     support_session: SupportSession,
 ) -> None:
     """Отправить автоответ, если нужно."""
-    print("Проверка на автоответчик")
     should_send = await chat_flow_service.should_send_auto_reply(chat_id=support_session.chat_id)
-    
+
     if should_send:
         await crud.add_message(
             support_session_id=support_session.id,
@@ -322,11 +322,11 @@ async def _send_positive_acknowledgement_reply(
         chat_id=support_session.chat_id
     )
     reply_text = (
-        POSITIVE_ACKNOWLEDGEMENT_REPLY_WITH_AD 
-        if should_show_ad 
+        POSITIVE_ACKNOWLEDGEMENT_REPLY_WITH_AD
+        if should_show_ad
         else POSITIVE_ACKNOWLEDGEMENT_REPLY_SIMPLE
     )
-    
+
     await crud.add_message(
         support_session_id=support_session.id,
         content=reply_text,
@@ -350,15 +350,14 @@ async def _send_ai_answer(
 ) -> None:
     """Отправить ответ AI и запланировать напоминание."""
     chat_id = support_session.chat_id
-    
+
     await crud.add_message(
         support_session_id=support_session.id,
         content=answer,
         role=MessageRole.assistant,
         assistant_type=AssistantType.ai
     )
-    
-    # Отправка ответа
+
     if chat_type == ChatType.PRIVATE:
         await bot.send_message(
             chat_id=chat_id,
@@ -367,8 +366,7 @@ async def _send_ai_answer(
         )
     else:
         await message.reply(text=answer)
-    
-    # Планирование напоминания
+
     await chat_flow_service.schedule_followup(
         chat_type=chat_type,
         message=message,
@@ -386,18 +384,32 @@ async def _send_ai_answer(
 async def _save_user_message(
     support_session: SupportSession,
     message_text_content: str | None = None,
-    media_data: dict | None = None,
+    media_data: MediaData | None = None,
 ) -> None:
-    """Сохранить сообщение клиента в БД."""
-    if media_data and media_data.get("media_type"):
-        await crud.add_message(
-            support_session_id=support_session.id,
-            role=MessageRole.user,
-            type=media_data["media_type"],
-        )
+    """Сохранить сообщение клиента в БД (одна запись)."""
+    media_type_str = media_data["media_type"] if media_data else None
+    msg_type = content_type_to_message_type(media_type_str)
+
     await crud.add_message(
         support_session_id=support_session.id,
         content=message_text_content,
         role=MessageRole.user,
-        type=MessageType.text
+        type=msg_type,
+    )
+
+
+async def _save_human_session_message(
+    support_session: SupportSession,
+    message: types.Message,
+) -> None:
+    """Сохранить сообщение клиента для human-сессии без LLM-обработки."""
+    media_type_str = get_message_media_type(message)
+    msg_type = content_type_to_message_type(media_type_str)
+    content = message.text or message.caption
+
+    await crud.add_message(
+        support_session_id=support_session.id,
+        content=content,
+        role=MessageRole.user,
+        type=msg_type,
     )

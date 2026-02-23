@@ -1,18 +1,16 @@
 import uuid
+import logging
 import datetime
 from typing import Optional
 
-from sqlalchemy import select, asc
+from sqlalchemy import select, asc, func, and_
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from telegram_bot.database.base import AsyncSessionLocal
 from telegram_bot.database.models import Chat, SupportSession, Message
 from telegram_bot.enums import SupportStatus, MessageType, MessageRole, AssistantType, ChatType
 
-
-async def _get_session() -> AsyncSession:
-    return AsyncSessionLocal()
+logger = logging.getLogger(__name__)
 
 
 async def _create_chat(
@@ -42,7 +40,7 @@ async def get_chat(
 ) -> Optional[Chat]:
     """
     Получить чат по chat_id или по username + chat_type.
-    
+
     Варианты использования:
     - get_chat(chat_id="123") — поиск по ID чата
     - get_chat(username="polina", chat_type=ChatType.PRIVATE) — поиск по username и типу чата
@@ -68,20 +66,13 @@ async def get_or_create_chat(
     if chat is None:
         chat = await _create_chat(chat_id, username=username, chat_type=chat_type)
     else:
-        needs_update = False
-        if username and chat.username != username:
-            needs_update = True
-        if chat_type and chat.chat_type != chat_type:
-            needs_update = True
+        needs_update = (
+            (username and chat.username != username)
+            or (chat_type and chat.chat_type != chat_type)
+        )
         if needs_update:
             chat = await _update_chat(chat_id, username=username, chat_type=chat_type)
     return chat
-
-
-async def _exists_chat(chat_id: str) -> bool:
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Chat.id).where(Chat.id == chat_id))
-        return result.scalar_one_or_none() is not None
 
 
 async def _update_chat(
@@ -149,32 +140,21 @@ async def get_active_session(chat_id: str) -> SupportSession | None:
 async def get_or_create_active_session(chat_id: str) -> SupportSession:
     """
     Получить активную сессию или создать новую.
-    
+
     Args:
         chat_id: идентификатор чата
-        
+
     Returns:
         Активная или новая сессия поддержки
     """
     active_session = await get_active_session(chat_id)
-    
+
     if active_session is None:
-        print("Нет действующей сессии, создание новой")
+        logger.info(f"Нет действующей сессии для chat_id={chat_id}, создание новой")
         return await create_support_session(chat_id=chat_id)
-    
-    print("Есть действующая сессия, продолжение")
+
+    logger.debug(f"Продолжение активной сессии {active_session.id}")
     return active_session
-
-
-async def _get_latest_session(chat_id: str) -> SupportSession | None:
-    """Получить последнюю сессию"""
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(SupportSession)
-            .where(SupportSession.chat_id == chat_id)
-            .order_by(SupportSession.created_at.desc())
-        )
-        return result.scalars().first()
 
 
 async def update_session_status(session_id: str, *, status: SupportStatus) -> Optional[SupportSession]:
@@ -195,7 +175,7 @@ async def update_session_assistant_type(session_id: str, *, assistant_type: Assi
         support_session = result.scalar_one_or_none()
         if support_session is None:
             return None
-        support_session.assistant_type = assistant_type 
+        support_session.assistant_type = assistant_type
         await session.commit()
         await session.refresh(support_session)
         return support_session
@@ -210,7 +190,7 @@ async def add_message(
     type: MessageType = MessageType.text
 ) -> Message:
     async with AsyncSessionLocal() as session:
-        now_iso = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
+        now_iso = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
         message = Message(
             id=str(uuid.uuid4()),
             support_session_id=support_session_id,
@@ -231,7 +211,7 @@ async def get_all_messages(support_session_id: str) -> list[Message]:
         result = await session.execute(
             select(Message)
             .where(Message.support_session_id == support_session_id)
-            .order_by(asc(Message.created_at_str))  # сортировка по времени
+            .order_by(asc(Message.created_at_str))
         )
         return list(result.scalars().all())
 
@@ -273,27 +253,32 @@ async def _delete_message(message_id: str) -> bool:
 
 async def get_all_chats_with_latest_sessions() -> list[tuple[Chat, SupportSession | None]]:
     """
-    Получить все чаты с их последней сессией.
-    
+    Получить все чаты с их последней сессией (один SQL-запрос).
+
     Returns:
         Список кортежей (Chat, SupportSession | None) для всех чатов.
     """
     async with AsyncSessionLocal() as session:
-        # Получаем все чаты
-        chats_result = await session.execute(select(Chat).order_by(Chat.username))
-        chats = list(chats_result.scalars().all())
-        
-        result = []
-        for chat in chats:
-            # Для каждого чата получаем последнюю сессию
-            session_result = await session.execute(
-                select(SupportSession)
-                .where(SupportSession.chat_id == chat.id)
-                .order_by(SupportSession.created_at.desc())
-                .limit(1)
+        # Подзапрос: максимальный created_at сессии для каждого чата
+        latest_sq = (
+            select(
+                SupportSession.chat_id,
+                func.max(SupportSession.created_at).label("max_created_at"),
             )
-            latest_session = session_result.scalar_one_or_none()
-            result.append((chat, latest_session))
-        
-        return result
+            .group_by(SupportSession.chat_id)
+            .subquery()
+        )
 
+        result = await session.execute(
+            select(Chat, SupportSession)
+            .outerjoin(latest_sq, Chat.id == latest_sq.c.chat_id)
+            .outerjoin(
+                SupportSession,
+                and_(
+                    SupportSession.chat_id == latest_sq.c.chat_id,
+                    SupportSession.created_at == latest_sq.c.max_created_at,
+                ),
+            )
+            .order_by(Chat.username)
+        )
+        return [(row.Chat, row.SupportSession) for row in result]

@@ -1,7 +1,7 @@
 from langgraph.graph import StateGraph
 from langgraph.constants import START, END
 
-from bitrix_qa_agent.enum import NodeNames
+from bitrix_qa_agent.enums import NodeNames
 from bitrix_qa_agent.state import BitrixQAState
 from bitrix_qa_agent.context import BitrixQAContext
 from bitrix_qa_agent.nodes import (

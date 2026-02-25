@@ -23,7 +23,7 @@ from bitrix_qa_agent.prompts import (
     CHOOSE_ARTICLES_PROMPT, ArticleRelevantIDSModel,
     GENERATE_ANSWER_PROMPT
 )
-from bitrix_qa_agent.enum import (
+from bitrix_qa_agent.enums import (
     UserMessageType,
     NodeNames
 )

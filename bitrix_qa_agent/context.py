@@ -1,9 +1,12 @@
 import os
-from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
+
+from loader.embedding_client import EmbeddingClient
+from loader.database.connection import AsyncSessionLocal
 
 
 class ChatModel(BaseModel):
@@ -21,6 +24,8 @@ class ChatModel(BaseModel):
 
 class BitrixQAContext(BaseModel):
     """Контекст QA агента"""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     lite_model: BaseChatModel = Field(
         description="Определение типа сообщения",
         default_factory=lambda: ChatModel(
@@ -39,12 +44,19 @@ class BitrixQAContext(BaseModel):
                 "temperature": 0
             }
         ).chat_model)
-    articles_metadata_path: Path = Field(
-        description="Путь до метаданных статей из документации",
-        default_factory=lambda: Path(__file__).parent / "qa_data" / "opensource_articles" / "articles_metadata.json"
+    embedding_client: EmbeddingClient = Field(
+        description="Клиент для построения эмбеддингов поискового запроса",
+        default_factory=EmbeddingClient,
     )
-    articles_files_path: Path = Field(
-        description="Путь до хранилище с файлами со статьями",
-        default_factory=lambda: Path(__file__).parent / "qa_data" / "opensource_articles" / "source_content"
+    db_session_factory: async_sessionmaker = Field(
+        description="Фабрика сессий для подключения к БД статей",
+        default_factory=lambda: AsyncSessionLocal,
     )
-    articles_batch_size: int = Field(description="Размер батча для количества статей в одном промпте", default=10)
+    vector_search_k: int = Field(
+        description="Количество ближайших статей, извлекаемых векторным поиском",
+        default=20,
+    )
+    articles_batch_size: int = Field(
+        description="Размер батча для количества статей в одном промпте LLM-отбора",
+        default=10,
+    )

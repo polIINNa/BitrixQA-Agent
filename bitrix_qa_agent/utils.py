@@ -1,5 +1,20 @@
 
 
+def get_article_title_and_problem(content: str) -> tuple[str, str]:
+    """Извлечь название (ТЕМА:) и описание проблемы (ПРОБЛЕМА:) из контента статьи"""
+    title = ""
+    problem = ""
+    for line in content.split('\n'):
+        line = line.strip()
+        if line.startswith("ТЕМА:"):
+            title = line[len("ТЕМА:"):].strip()
+        elif line.startswith("ПРОБЛЕМА:"):
+            problem = line[len("ПРОБЛЕМА:"):].strip()
+        if title and problem:
+            break
+    return title, problem
+
+
 def get_article_batches(articles_metadata: dict[str, dict], batch_size: int = 10) -> list[str]:
     """Получить список батчей с данными по статьям"""
 

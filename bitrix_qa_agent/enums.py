@@ -20,6 +20,7 @@ class NodeNames(enum.StrEnum):
     positive_acknowledgement_check = 'Определение положительного отклика'
     knowledge_required_check = 'Определение необходимости похода в базу знаний'
     identify_search_query = 'Получить запрос для поиска по базе знаний (выделение интента)'
-    get_relevant_articles_ids = 'Получить релевантные статьи для формирования ответа'
+    vector_search_articles = 'Векторный поиск статей по запросу'
+    get_relevant_articles_ids = 'Отобрать релевантные статьи через LLM'
     form_context = 'Сформировать контекст'
     generate_answer = 'Сгенерировать ответ на вопрос'

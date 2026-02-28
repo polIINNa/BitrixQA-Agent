@@ -1,14 +1,18 @@
 import asyncio
-import os
+import logging
 
-import httpx
 from dotenv import load_dotenv
 
-from bitrix_qa_agent.api import invoke_graph
-from langchain_openai import ChatOpenAI
+from bitrix_qa_agent.graph import get_simple_graph
 from bitrix_qa_agent.context import BitrixQAContext
+from bitrix_qa_agent.state import InputState
 
 load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
 
 # тип чат, просто ответ
@@ -209,7 +213,7 @@ test_t1 = {
 </Ассистент>"""
 ,
     "last_user_message": "Хорошо, сейчас попробую"
-    
+
 }
 
 # антикейс текущего правила благодарности, когда после несколько раз идет положительный отклик, но ответить что-то стоит
@@ -241,22 +245,39 @@ test_t2 = {
 
 }
 
+
+def _format_node_update(update: dict | None) -> dict:
+    """Форматировать вывод нода для читаемого отображения (без полных текстов статей)."""
+    if not update:
+        return {}
+    formatted = {}
+    for key, value in update.items():
+        if key == "fetched_articles":
+            formatted[key] = [a["source_article_id"] for a in value]
+        elif key == "context" and value:
+            formatted[key] = f"<{len(value)} символов>"
+        else:
+            formatted[key] = value
+    return formatted
+
+
 async def main(test):
+    graph = get_simple_graph()
     context = BitrixQAContext()
 
-    # model = ChatOpenAI(
-    #     model='google/gemini-2.5-flash-lite',
-    #     api_key=os.getenv("OPENROUTER_API_KEY"),
-    #     base_url='https://openrouter.ai/api/v1',
-    #     # http_async_client=httpx.AsyncClient(
-    #     #     auth=(os.getenv('PROXY_LOGIN'), os.getenv('PROXY_PASSWORD')),
-    #     #     proxy=f"http://{os.getenv('PROXY_HOST')}:{os.getenv('PROXY_PORT')}",
-    #     # )
-    # )
-    # res = await model.ainvoke('Привет, это проверка связи')
-    res = await invoke_graph(test["chat_history"], test["last_user_message"])
-    print(res)
+    async for chunk in graph.astream(
+        input=InputState(
+            chat_history=test["chat_history"],
+            last_user_message=test["last_user_message"],
+        ),
+        context=context,
+        stream_mode="updates",
+    ):
+        for node_name, update in chunk.items():
+            print(f"\n{'='*50}")
+            print(f"NODE: {node_name}")
+            print(_format_node_update(update))
 
 
 if __name__ == '__main__':
-    asyncio.run(main(test1))
+    asyncio.run(main(test2))

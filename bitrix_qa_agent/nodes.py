@@ -1,7 +1,9 @@
 #TODO: подумать над тем, чтобы сделать поход в базу (после knowledge_required проверки) сабграфом
 
-import json
+import logging
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 from langgraph.types import Command
 from langgraph.runtime import Runtime
@@ -28,7 +30,8 @@ from bitrix_qa_agent.enums import (
     NodeNames
 )
 from bitrix_qa_agent.output_parsers import BoolDigitOutputParser
-from bitrix_qa_agent.utils import get_article_batches, get_sections_content
+from bitrix_qa_agent.utils import get_article_title_and_problem, get_sections_content
+from loader.database.repository import vector_search_articles as db_vector_search_articles
 
 
 async def check_new_intent(
@@ -182,53 +185,82 @@ async def identify_search_query(state: BitrixQAState, runtime: Runtime[BitrixQAC
         return {"query": search_query}
 
 
+async def vector_search_articles(state: RAGState, runtime: Runtime[BitrixQAContext]) -> RAGState:
+    """Векторный поиск ближайших статей по запросу"""
+    context = runtime.context or BitrixQAContext()
+    query_embedding = await context.embedding_client.embed(state.query)
+    async with context.db_session_factory() as session:
+        raw_results = await db_vector_search_articles(session, query_embedding, k=context.vector_search_k)
+
+    seen_source_ids: set[int] = set()
+    fetched_articles = []
+    for _revision_id, source_article_id, content in raw_results:
+        if source_article_id not in seen_source_ids:
+            seen_source_ids.add(source_article_id)
+            fetched_articles.append({"source_article_id": source_article_id, "content": content})
+
+    logger.info(
+        "vector_search_articles: найдено %d уникальных статей, source_article_ids=%s",
+        len(fetched_articles),
+        [a["source_article_id"] for a in fetched_articles],
+    )
+    return {"fetched_articles": fetched_articles}
+
+
 async def get_relevant_articles_ids(state: RAGState, runtime: Runtime[BitrixQAContext]) -> RAGState:
-    """Получить релевантные ids по всем батчам"""
+    """Отобрать релевантные статьи из найденных векторным поиском через LLM"""
     context = runtime.context or BitrixQAContext()
 
     async def get_relevant_articles_ids_batch(_input: dict) -> list | None:
-        """Получить ids по одному батчу"""
         chain = CHOOSE_ARTICLES_PROMPT | context.lite_model.with_structured_output(ArticleRelevantIDSModel)
         chain_with_retry = chain.with_retry(
-        retry_if_exception_type=(OutputParserException,), stop_after_attempt=3
+            retry_if_exception_type=(OutputParserException,), stop_after_attempt=3
         )
-        relevant_articles_ids_result = (await chain_with_retry.ainvoke({
+        result = (await chain_with_retry.ainvoke({
             "articles_metadata": _input["articles_metadata"],
             "query": _input["query"]
         })).relevant_articles_ids
-        if relevant_articles_ids_result is not None:
-            return [str(_id) for _id in relevant_articles_ids_result]
+        if result is not None:
+            return [str(_id) for _id in result]
         return None
 
-    with open(context.articles_metadata_path, "r", encoding="utf-8") as f:
-        articles_metadata = json.load(f)
-    article_batches = get_article_batches(articles_metadata=articles_metadata, batch_size=context.articles_batch_size)
-    _inputs = [
-        {"articles_metadata": batch_articles_metadata, "query": state.query}
-        for batch_articles_metadata in article_batches
-    ]
+    article_batches = []
+    batch = []
+    for article in state.fetched_articles:
+        title, problem = get_article_title_and_problem(article["content"])
+        batch.append(
+            f"ID статьи: {article['source_article_id']}\nТема: {title}\nПроблема: {problem}"
+        )
+        if len(batch) == context.articles_batch_size:
+            article_batches.append({"articles_metadata": "\n\n".join(batch), "query": state.query})
+            batch = []
+    if batch:
+        article_batches.append({"articles_metadata": "\n\n".join(batch), "query": state.query})
+
     relevant_articles_ids_all = []
     runnable = RunnableLambda(func=get_relevant_articles_ids_batch)
-    async for idx, relevant_articles_ids in runnable.abatch_as_completed(_inputs, return_exceptions=True):
-        if isinstance(relevant_articles_ids, Exception):
+    async for _idx, relevant_ids in runnable.abatch_as_completed(article_batches, return_exceptions=True):
+        if isinstance(relevant_ids, Exception):
             continue
-        if relevant_articles_ids is not None:
-            relevant_articles_ids_all.extend(relevant_articles_ids)
+        if relevant_ids is not None:
+            relevant_articles_ids_all.extend(relevant_ids)
+
+    logger.info(
+        "get_relevant_articles_ids: отобрано %d из %d, relevant_ids=%s",
+        len(relevant_articles_ids_all),
+        len(state.fetched_articles),
+        relevant_articles_ids_all,
+    )
     return {"relevant_articles_ids": relevant_articles_ids_all}
 
 
 async def form_context(state: RAGState, runtime: Runtime[BitrixQAContext]) -> RAGState:
-    """Сформировать из найденных статей контекст"""
+    """Сформировать из отобранных статей контекст"""
     rag_context = []
-    context = runtime.context or BitrixQAContext()
-    with open(context.articles_metadata_path, "r", encoding="utf-8") as f:
-        articles_metadata = json.load(f)
-    for _id, metadata in articles_metadata.items():
-        if _id in state.relevant_articles_ids:
-            with open(f"{context.articles_files_path}/{metadata['article_filename']}", "r", encoding="utf-8") as f:
-                article_content = f.read()
-            sections_article_content = get_sections_content(article_content=article_content)
-            rag_context.append(sections_article_content)
+    for article in state.fetched_articles:
+        if str(article["source_article_id"]) in state.relevant_articles_ids:
+            sections_content = get_sections_content(article_content=article["content"])
+            rag_context.append(sections_content)
     return {"context": "\n\n".join(rag_context)}
 
 

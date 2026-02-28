@@ -5,6 +5,37 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from loader.database.models import ArticleRevision, ArticleEmbeddingIndex
 
 
+async def vector_search_articles(
+    session: AsyncSession,
+    query_embedding: list[float],
+    k: int = 20,
+) -> list[tuple[int, int, str]]:
+    """Векторный поиск k ближайших статей по косинусному расстоянию.
+
+    Возвращает список (article_revision_id, source_article_id, content).
+    Дедупликация по source_article_id: берётся ближайший чанк/ревизия.
+    """
+    stmt = (
+        select(
+            ArticleEmbeddingIndex.article_revision_id,
+            ArticleRevision.source_article_id,
+            ArticleRevision.content,
+        )
+        .join(ArticleRevision, ArticleRevision.id == ArticleEmbeddingIndex.article_revision_id)
+        .order_by(ArticleEmbeddingIndex.embedding.cosine_distance(query_embedding))
+        .limit(k)
+    )
+    result = await session.execute(stmt)
+
+    seen_source_ids: set[int] = set()
+    articles: list[tuple[int, int, str]] = []
+    for row in result.all():
+        if row.source_article_id not in seen_source_ids:
+            seen_source_ids.add(row.source_article_id)
+            articles.append((row.article_revision_id, row.source_article_id, row.content))
+    return articles
+
+
 async def get_revisions_needing_embedding(session: AsyncSession) -> list[ArticleRevision]:
     """Найти последние ревизии статей, у которых нет эмбеддинга.
 

@@ -207,7 +207,9 @@ async def vector_search_articles(state: RAGState, runtime: Runtime[BitrixQAConte
     return {"fetched_articles": fetched_articles}
 
 
-async def get_relevant_articles_ids(state: RAGState, runtime: Runtime[BitrixQAContext]) -> RAGState:
+async def get_relevant_articles_ids(
+        state: RAGState, runtime: Runtime[BitrixQAContext]
+) -> Command[Literal['__end__', NodeNames.form_context]]:
     """Отобрать релевантные статьи из найденных векторным поиском через LLM"""
     context = runtime.context or BitrixQAContext()
 
@@ -251,7 +253,18 @@ async def get_relevant_articles_ids(state: RAGState, runtime: Runtime[BitrixQACo
         len(state.fetched_articles),
         relevant_articles_ids_all,
     )
-    return {"relevant_articles_ids": relevant_articles_ids_all}
+
+    if not relevant_articles_ids_all:
+        logger.info("get_relevant_articles_ids: релевантных статей не найдено, завершаем с NEGATIVE")
+        return Command(
+            update={"user_message_type": UserMessageType.NEGATIVE.value},
+            goto='__end__'
+        )
+
+    return Command(
+        update={"relevant_articles_ids": relevant_articles_ids_all},
+        goto=NodeNames.form_context
+    )
 
 
 async def form_context(state: RAGState, runtime: Runtime[BitrixQAContext]) -> RAGState:

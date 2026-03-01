@@ -10,6 +10,9 @@ from loader.database.repository import (
     get_revisions_needing_embedding,
     delete_embeddings_for_source_article,
     save_embedding,
+    upsert_dialogues,
+    get_dialogues_needing_embedding,
+    save_dialogue_embedding,
 )
 from loader.embedding_client import EmbeddingClient
 
@@ -30,6 +33,50 @@ def _iter_batches(iterable, n):
 )
 async def _embed_batch(embedding_client: EmbeddingClient, texts: list[str]) -> list[list[float]]:
     return await embedding_client.embed_documents(texts)
+
+
+async def run_dialogues(
+    session: AsyncSession,
+    embedding_client: EmbeddingClient,
+    items: list[dict],
+) -> None:
+    """Обработать примеры диалогов: сохранить в БД и построить эмбеддинги."""
+    if not items:
+        logger.info("Нет примеров диалогов для обработки")
+        return
+
+    await upsert_dialogues(session, items)
+    await session.commit()
+
+    dialogues = await get_dialogues_needing_embedding(session)
+
+    if not dialogues:
+        logger.info("Все примеры диалогов уже имеют эмбеддинги")
+        return
+
+    config = get_config()
+    logger.info("Найдено примеров диалогов для векторизации: %d", len(dialogues))
+
+    for batch in _iter_batches(dialogues, config.embedding_batch_size):
+        questions = [d.question for d in batch]
+
+        try:
+            embeddings = await _embed_batch(embedding_client, questions)
+        except Exception:
+            logger.exception(
+                "Батч из %d диалогов не удалось векторизовать после 3 попыток, пропускаем",
+                len(batch),
+            )
+            continue
+
+        for dialogue, embedding in zip(batch, embeddings):
+            try:
+                await save_dialogue_embedding(session, dialogue.id, embedding)
+                await session.commit()
+                logger.info("Обработан диалог %d", dialogue.id)
+            except Exception:
+                await session.rollback()
+                logger.exception("Ошибка при обработке диалога %d", dialogue.id)
 
 
 async def run(session: AsyncSession, embedding_client: EmbeddingClient) -> None:

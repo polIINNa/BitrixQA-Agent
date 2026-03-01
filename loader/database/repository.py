@@ -1,8 +1,9 @@
 """Запросы к БД статей."""
-from sqlalchemy import select, delete, func, and_
+from sqlalchemy import select, delete, func, and_, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from loader.database.models import ArticleRevision, ArticleEmbeddingIndex
+from loader.database.models import ArticleRevision, ArticleEmbeddingIndex, DialogueKnowledgeItem
 
 
 async def vector_search_articles(
@@ -100,3 +101,81 @@ async def save_embedding(
         embedding=embedding,
     )
     session.add(index)
+
+
+# ---------------------------------------------------------------------------
+# Dialogue knowledge items
+# ---------------------------------------------------------------------------
+
+def _format_dialogue_as_article(question: str, answer: str) -> str:
+    """Сформатировать пример диалога в формат статьи для единого RAG-пайплайна."""
+    short_q = question[:100] if len(question) > 100 else question
+    return f"ТЕМА: {short_q}\nПРОБЛЕМА: {question}\nРЕШЕНИЕ:\n{answer}"
+
+
+async def upsert_dialogues(
+    session: AsyncSession,
+    items: list[dict],
+) -> None:
+    """Вставить или обновить примеры диалогов.
+
+    Уникальный ключ — question. При изменении answer сбрасывает embedding в NULL,
+    чтобы пайплайн перестроил его при следующем запуске.
+    """
+    for item in items:
+        stmt = (
+            pg_insert(DialogueKnowledgeItem)
+            .values(question=item["question"], answer=item["answer"])
+            .on_conflict_do_update(
+                index_elements=["question"],
+                set_={"answer": item["answer"], "embedding": None},
+                where=DialogueKnowledgeItem.answer != item["answer"],
+            )
+        )
+        await session.execute(stmt)
+    await session.flush()
+
+
+async def get_dialogues_needing_embedding(
+    session: AsyncSession,
+) -> list[DialogueKnowledgeItem]:
+    """Получить примеры диалогов, у которых ещё нет эмбеддинга."""
+    stmt = select(DialogueKnowledgeItem).where(DialogueKnowledgeItem.embedding.is_(None))
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def save_dialogue_embedding(
+    session: AsyncSession,
+    dialogue_id: int,
+    embedding: list[float],
+) -> None:
+    """Сохранить эмбеддинг для примера диалога."""
+    stmt = (
+        update(DialogueKnowledgeItem)
+        .where(DialogueKnowledgeItem.id == dialogue_id)
+        .values(embedding=embedding)
+    )
+    await session.execute(stmt)
+
+
+async def vector_search_dialogues(
+    session: AsyncSession,
+    query_embedding: list[float],
+    k: int = 5,
+) -> list[tuple[int, str]]:
+    """Векторный поиск k ближайших примеров диалогов по косинусному расстоянию.
+
+    Возвращает список (dialogue_id, content_as_pseudo_article).
+    """
+    stmt = (
+        select(DialogueKnowledgeItem.id, DialogueKnowledgeItem.question, DialogueKnowledgeItem.answer)
+        .where(DialogueKnowledgeItem.embedding.is_not(None))
+        .order_by(DialogueKnowledgeItem.embedding.cosine_distance(query_embedding))
+        .limit(k)
+    )
+    result = await session.execute(stmt)
+    return [
+        (row.id, _format_dialogue_as_article(row.question, row.answer))
+        for row in result.all()
+    ]

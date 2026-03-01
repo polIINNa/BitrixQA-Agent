@@ -25,7 +25,7 @@ from alembic import context
 load_dotenv()
 
 from loader.database.connection import Base
-from loader.database.models import ArticleRevision, ArticleEmbeddingIndex  # noqa: F401
+from loader.database.models import ArticleRevision, ArticleEmbeddingIndex, DialogueKnowledgeItem  # noqa: F401
 
 config = context.config
 
@@ -43,7 +43,7 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # Loader управляет только своей таблицей — остальные игнорируем при autogenerate
-LOADER_TABLES = {"article_embedding_index"}
+LOADER_TABLES = {"article_embedding_index", "dialogue_knowledge_item"}
 
 
 def include_object(object, name, type_, reflected, compare_to):

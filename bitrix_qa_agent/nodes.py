@@ -31,7 +31,10 @@ from bitrix_qa_agent.enums import (
 )
 from bitrix_qa_agent.output_parsers import BoolDigitOutputParser
 from bitrix_qa_agent.utils import get_article_title_and_problem, get_sections_content
-from loader.database.repository import vector_search_articles as db_vector_search_articles
+from loader.database.repository import (
+    vector_search_articles as db_vector_search_articles,
+    vector_search_dialogues as db_vector_search_dialogues,
+)
 
 
 async def check_new_intent(
@@ -186,22 +189,27 @@ async def identify_search_query(state: BitrixQAState, runtime: Runtime[BitrixQAC
 
 
 async def vector_search_articles(state: RAGState, runtime: Runtime[BitrixQAContext]) -> RAGState:
-    """Векторный поиск ближайших статей по запросу"""
+    """Векторный поиск ближайших статей и примеров диалогов по запросу"""
     context = runtime.context or BitrixQAContext()
     query_embedding = await context.embedding_client.embed(state.query)
     async with context.db_session_factory() as session:
-        raw_results = await db_vector_search_articles(session, query_embedding, k=context.vector_search_k)
+        raw_articles = await db_vector_search_articles(session, query_embedding, k=context.vector_search_k)
+        raw_dialogues = await db_vector_search_dialogues(session, query_embedding)
 
     seen_source_ids: set[int] = set()
     fetched_articles = []
-    for _revision_id, source_article_id, content in raw_results:
+    for _revision_id, source_article_id, content in raw_articles:
         if source_article_id not in seen_source_ids:
             seen_source_ids.add(source_article_id)
             fetched_articles.append({"source_article_id": source_article_id, "content": content})
 
+    for dialogue_id, content in raw_dialogues:
+        fetched_articles.append({"source_article_id": f"d_{dialogue_id}", "content": content})
+
     logger.info(
-        "vector_search_articles: найдено %d уникальных статей, source_article_ids=%s",
-        len(fetched_articles),
+        "vector_search_articles: найдено %d статей и %d диалогов, ids=%s",
+        len(fetched_articles) - len(raw_dialogues),
+        len(raw_dialogues),
         [a["source_article_id"] for a in fetched_articles],
     )
     return {"fetched_articles": fetched_articles}

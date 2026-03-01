@@ -39,3 +39,13 @@ class ArticleEmbeddingIndex(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
     article_revision = relationship("ArticleRevision", back_populates="embedding_index")
+
+
+class DialogueKnowledgeItem(Base):
+    """Кураторский пример диалога для RAG-поиска. Заполняется loader сервисом."""
+    __tablename__ = "dialogue_knowledge_item"
+    id = Column(Integer, primary_key=True)
+    question = Column(Text, nullable=False, unique=True)
+    answer = Column(Text, nullable=False)
+    embedding = Column(Vector(1536), nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())

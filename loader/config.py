@@ -18,6 +18,8 @@ class LoaderConfig:
     schedule_day_of_week: str = "sun"
     schedule_hour: int = 18
     schedule_minute: int = 0
+    # Опциональный прокси для запросов к OpenRouter
+    proxy_url: str | None = None
 
     @classmethod
     def from_env(cls) -> "LoaderConfig":
@@ -35,6 +37,14 @@ class LoaderConfig:
         if missing:
             raise ValueError(f"Отсутствуют обязательные переменные окружения: {', '.join(missing)}")
 
+        proxy_url: str | None = None
+        proxy_login = os.getenv("PROXY_LOGIN")
+        proxy_password = os.getenv("PROXY_PASSWORD")
+        proxy_host = os.getenv("PROXY_HOST")
+        proxy_port = os.getenv("PROXY_PORT")
+        if all([proxy_login, proxy_password, proxy_host, proxy_port]):
+            proxy_url = f"http://{proxy_login}:{proxy_password}@{proxy_host}:{proxy_port}"
+
         return cls(
             knowledge_database_url=knowledge_database_url,
             openai_api_key=openai_api_key,
@@ -42,6 +52,7 @@ class LoaderConfig:
             schedule_day_of_week=os.getenv("LOADER_SCHEDULE_DOW", "sun"),
             schedule_hour=int(os.getenv("LOADER_SCHEDULE_HOUR", "18")),
             schedule_minute=int(os.getenv("LOADER_SCHEDULE_MINUTE", "0")),
+            proxy_url=proxy_url,
         )
 
 _config: LoaderConfig | None = None

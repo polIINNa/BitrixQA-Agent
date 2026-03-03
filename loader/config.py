@@ -14,6 +14,10 @@ class LoaderConfig:
     base_url: str
     embedding_model: str = "openai/text-embedding-3-small"
     embedding_batch_size: int = 50
+    # Расписание запуска (cron). По умолчанию: воскресенье 18:00
+    schedule_day_of_week: str = "sun"
+    schedule_hour: int = 18
+    schedule_minute: int = 0
 
     @classmethod
     def from_env(cls) -> "LoaderConfig":
@@ -35,6 +39,9 @@ class LoaderConfig:
             knowledge_database_url=knowledge_database_url,
             openai_api_key=openai_api_key,
             base_url=base_url,
+            schedule_day_of_week=os.getenv("LOADER_SCHEDULE_DOW", "sun"),
+            schedule_hour=int(os.getenv("LOADER_SCHEDULE_HOUR", "18")),
+            schedule_minute=int(os.getenv("LOADER_SCHEDULE_MINUTE", "0")),
         )
 
 _config: LoaderConfig | None = None

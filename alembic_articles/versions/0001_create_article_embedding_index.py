@@ -18,6 +18,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    op.execute('CREATE EXTENSION IF NOT EXISTS vector')
     op.create_table(
         'article_embedding_index',
         sa.Column('id', sa.Integer(), primary_key=True),

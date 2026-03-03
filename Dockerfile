@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Делаем entrypoint исполняемым
-RUN chmod +x entrypoint.sh
+RUN chmod +x entrypoint.sh entrypoint_loader.sh
 
 # Устанавливаем переменную окружения для Python
 ENV PYTHONPATH=/app

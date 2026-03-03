@@ -10,8 +10,6 @@ services:
     depends_on:
       database:
         condition: service_healthy
-    volumes:
-      - /Users/polinarebrova/PycharmProjects/BitrixQA/bitrix_qa_agent/qa_data:/app/bitrix_qa_agent/qa_data
     networks:
       - app-network
       - shared_network
@@ -35,6 +33,18 @@ services:
       retries: 5
     networks:
       - app-network
+
+  loader:
+    image: pr21109090/bitrix_qa:latest
+    container_name: bitrix-qa-loader
+    restart: unless-stopped
+    entrypoint: ["./entrypoint_loader.sh"]
+    env_file:
+      - .env
+    volumes:
+      - ./база_знаний_диалоги.xlsx:/app/база_знаний_диалоги.xlsx:ro
+    networks:
+      - shared_network
 
 volumes:
   postgres_data:

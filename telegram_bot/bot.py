@@ -6,6 +6,7 @@ import logging
 from aiogram.enums import ParseMode
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.types import BotCommand, BotCommandScopeDefault
 
 from telegram_bot.routers import specialist_router, private_router, group_router
@@ -24,9 +25,12 @@ dp.include_router(specialist_router)
 dp.include_router(private_router)
 dp.include_router(group_router)
 
+session = AiohttpSession(proxy=config.proxy_url) if config.proxy_url else None
+
 bot = Bot(
     config.token,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    **({"session": session} if session else {}),
 )
 
 # Список команд для меню "/"

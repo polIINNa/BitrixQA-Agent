@@ -14,7 +14,9 @@ class BotConfig:
     tech_support_account_id: str
     operator_id: str
     bot_username: str
-    
+    # Опциональный прокси для запросов к Telegram Bot API
+    proxy_url: str | None = None
+
     @classmethod
     def from_env(cls) -> "BotConfig":
         """Создать конфигурацию из переменных окружения."""
@@ -22,7 +24,8 @@ class BotConfig:
         tech_support_account_id = os.getenv("TECH_SUPPORT_ACCOUNT_ID")
         operator_id = os.getenv("OPERATOR_ID")
         bot_username = os.getenv("BOT_USERNAME")
-        
+        proxy_url = os.getenv("TELEGRAM_PROXY_URL") or None
+
         if not all([token, tech_support_account_id, operator_id, bot_username]):
             missing = []
             if not token:
@@ -34,12 +37,13 @@ class BotConfig:
             if not bot_username:
                 missing.append("BOT_USERNAME")
             raise ValueError(f"Отсутствуют обязательные переменные окружения: {', '.join(missing)}")
-        
+
         return cls(
             token=token,
             tech_support_account_id=tech_support_account_id,
             operator_id=operator_id,
             bot_username=bot_username,
+            proxy_url=proxy_url,
         )
 
 

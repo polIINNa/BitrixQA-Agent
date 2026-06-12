@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.exceptions import OutputParserException
+from pydantic import ValidationError
 
 from bitrix_qa_agent.context import BitrixQAContext
 from bitrix_qa_agent.state import BitrixQAState, RAGState
@@ -108,7 +109,9 @@ async def need_reply_check(
     context = runtime.context or BitrixQAContext()
     chain = NEED_REPLY_PROMPT | context.pro_model.with_structured_output(NeedReplyModel)
     chain_with_retry = chain.with_retry(
-        retry_if_exception_type=(OutputParserException,), stop_after_attempt=3
+        retry_if_exception_type=(OutputParserException, ValidationError),
+        stop_after_attempt=3,
+        exponential_jitter_params={"initial": 2, "max": 10},
     )
     need_reply = (await chain_with_retry.ainvoke(
         {

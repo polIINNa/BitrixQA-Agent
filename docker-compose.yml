@@ -2,7 +2,7 @@ version: '3.9'
 
 services:
   bitrix_qa_bot:
-    image: pr21109090/bitrix_qa:latest
+    image: pr21109090/bitrix_qa:multiarch
     container_name: bitrix-qa-bot
     restart: unless-stopped
     env_file:
@@ -35,7 +35,7 @@ services:
       - app-network
 
   loader:
-    image: pr21109090/bitrix_qa:latest
+    image: pr21109090/bitrix_qa:multiarch
     container_name: bitrix-qa-loader
     restart: unless-stopped
     entrypoint: ["./entrypoint_loader.sh"]

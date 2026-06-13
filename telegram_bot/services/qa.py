@@ -30,24 +30,24 @@ class QAResponse(BaseModel):
 async def get_response(
     user_message: str,
     session_id: str,
-    exclude_message_id: str | None = None,
+    exclude_message_ids: set[str] | None = None,
 ) -> QAResponse:
     """
     Получить ответ от QA агента.
 
     Args:
-        user_message: сообщение пользователя
+        user_message: сообщение пользователя (для залпа — склейка нескольких сообщений)
         session_id: ID сессии для получения истории
-        exclude_message_id: id сообщения, которое нужно исключить из истории
-            (текущее сообщение уже сохранено при входе — в историю графа оно
-            передаётся отдельно как last_user_message, а не как часть chat_history)
+        exclude_message_ids: id сообщений, которые нужно исключить из истории
+            (сообщения текущего хода уже сохранены при входе — в граф они идут
+            отдельно как last_user_message, а не как часть chat_history)
 
     Returns:
         QAResponse с типом сообщения и ответом
     """
     session_messages = await crud.get_all_messages(session_id)
-    if exclude_message_id is not None:
-        session_messages = [m for m in session_messages if m.id != exclude_message_id]
+    if exclude_message_ids:
+        session_messages = [m for m in session_messages if m.id not in exclude_message_ids]
     chat_history = format_chat_from_message(support_session_messages=session_messages)
 
     result = await invoke_graph(

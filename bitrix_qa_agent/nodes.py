@@ -38,6 +38,17 @@ from loader.database.repository import (
 )
 
 
+def _with_llm_retry(chain):
+    """Единый ретрай LLM-цепочки: повтор при мусорном/обрезанном выводе
+    (OutputParserException, ValidationError) — 3 попытки с джиттером ~2–10с.
+    Сетевые/API-блипы (прокси, rate-limit) ретраит сам клиент модели (max_retries)."""
+    return chain.with_retry(
+        retry_if_exception_type=(OutputParserException, ValidationError),
+        stop_after_attempt=3,
+        exponential_jitter_params={"initial": 2, "max": 10},
+    )
+
+
 async def check_new_intent(
         state: BitrixQAState, runtime: Runtime[BitrixQAContext]
 ) -> Command[Literal['__end__', NodeNames.check_negative]]:
@@ -47,7 +58,7 @@ async def check_new_intent(
         return Command(goto=NodeNames.check_negative)
 
     context = runtime.context or BitrixQAContext()
-    chain = CHECK_NEW_INTENT_PROMPT | context.pro_model | BoolDigitOutputParser()
+    chain = _with_llm_retry(CHECK_NEW_INTENT_PROMPT | context.pro_model | BoolDigitOutputParser())
     has_new_intent = await chain.ainvoke(
         {
             "chat_history": state.chat_history,
@@ -72,7 +83,7 @@ async def admin_node(state: BitrixQAState, runtime: Runtime[BitrixQAContext]) ->
         raw_answer = state.answer
     else:
         raw_answer = "нет"
-    chain = ADMIN_PROMPT | context.pro_model | StrOutputParser()
+    chain = _with_llm_retry(ADMIN_PROMPT | context.pro_model | StrOutputParser())
     answer = await chain.ainvoke(
         {
             "chat": chat,
@@ -87,7 +98,7 @@ async def check_negative(
 ) -> Command[Literal['__end__', NodeNames.need_reply_check]]:
     """Проверить, есть ли негатив в сообщении клиента"""
     context = runtime.context or BitrixQAContext()
-    chain = CHECK_NEGATIVE_PROMPT | context.lite_model | BoolDigitOutputParser()
+    chain = _with_llm_retry(CHECK_NEGATIVE_PROMPT | context.lite_model | BoolDigitOutputParser())
     has_negative = await chain.ainvoke(
         {
             "chat_history": state.chat_history,
@@ -107,13 +118,8 @@ async def need_reply_check(
 ) -> Command[Literal['__end__', NodeNames.positive_acknowledgement_check]]:
     """Определить необходимость ответа"""
     context = runtime.context or BitrixQAContext()
-    chain = NEED_REPLY_PROMPT | context.pro_model.with_structured_output(NeedReplyModel)
-    chain_with_retry = chain.with_retry(
-        retry_if_exception_type=(OutputParserException, ValidationError),
-        stop_after_attempt=3,
-        exponential_jitter_params={"initial": 2, "max": 10},
-    )
-    need_reply = (await chain_with_retry.ainvoke(
+    chain = _with_llm_retry(NEED_REPLY_PROMPT | context.pro_model.with_structured_output(NeedReplyModel))
+    need_reply = (await chain.ainvoke(
         {
             "chat_history": state.chat_history,
             "last_user_message": state.last_user_message
@@ -133,7 +139,7 @@ async def positive_acknowledgement_check(
 ) -> Command[Literal['__end__', NodeNames.knowledge_required_check]]:
     """Проверить, является ли сообщение клиента положительным откликом"""
     context = runtime.context or BitrixQAContext()
-    chain = POSITIVE_ACKNOWLEDGMENT_PROMPT | context.lite_model | BoolDigitOutputParser()
+    chain = _with_llm_retry(POSITIVE_ACKNOWLEDGMENT_PROMPT | context.lite_model | BoolDigitOutputParser())
     positive_acknowledgement = (await chain.ainvoke(
         {
             "chat_history": state.chat_history,
@@ -155,7 +161,7 @@ async def knowledge_required_check(
     """Определяет необходимость похода в базу знаний"""
     context = runtime.context or BitrixQAContext()
     #TODO: переименовать промпт
-    chain = NEED_KNOWLEDGE_DATABASE_PROMPT | context.lite_model | BoolDigitOutputParser()
+    chain = _with_llm_retry(NEED_KNOWLEDGE_DATABASE_PROMPT | context.lite_model | BoolDigitOutputParser())
     knowledge_required = (await chain.ainvoke(
         {
             "chat_history": state.chat_history,
@@ -181,7 +187,7 @@ async def identify_search_query(state: BitrixQAState, runtime: Runtime[BitrixQAC
     if state.chat_history == "":
         return {"query": state.last_user_message}
     else:
-        chain = IDENTIFY_SEARCH_QUERY_PROMPT | context.lite_model | StrOutputParser()
+        chain = _with_llm_retry(IDENTIFY_SEARCH_QUERY_PROMPT | context.lite_model | StrOutputParser())
         search_query = await chain.ainvoke(
             {
                 "chat_history": state.chat_history,
@@ -225,11 +231,8 @@ async def get_relevant_articles_ids(
     context = runtime.context or BitrixQAContext()
 
     async def get_relevant_articles_ids_batch(_input: dict) -> list | None:
-        chain = CHOOSE_ARTICLES_PROMPT | context.lite_model.with_structured_output(ArticleRelevantIDSModel)
-        chain_with_retry = chain.with_retry(
-            retry_if_exception_type=(OutputParserException,), stop_after_attempt=3
-        )
-        result = (await chain_with_retry.ainvoke({
+        chain = _with_llm_retry(CHOOSE_ARTICLES_PROMPT | context.lite_model.with_structured_output(ArticleRelevantIDSModel))
+        result = (await chain.ainvoke({
             "articles_metadata": _input["articles_metadata"],
             "query": _input["query"]
         })).relevant_articles_ids
@@ -291,6 +294,6 @@ async def form_context(state: RAGState, runtime: Runtime[BitrixQAContext]) -> RA
 async def generate_answer(state: RAGState, runtime: Runtime[BitrixQAContext]) -> BitrixQAState:
     """Сгенерировать ответ на вопрос"""
     context = runtime.context or BitrixQAContext()
-    chain = GENERATE_ANSWER_PROMPT | context.lite_model | StrOutputParser()
+    chain = _with_llm_retry(GENERATE_ANSWER_PROMPT | context.lite_model | StrOutputParser())
     answer = await chain.ainvoke({"context": state.context, "query": state.query})
     return {"answer": answer}

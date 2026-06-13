@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, ForeignKey, Enum, Text, String,
-    TIMESTAMP, func
+    TIMESTAMP, Index, func
 )
 from sqlalchemy.orm import relationship
 
@@ -36,12 +36,19 @@ class SupportSession(Base):
 
 class Message(Base):
     __tablename__ = "messages"
+    __table_args__ = (
+        # Под основной запрос истории: фильтр по сессии + сортировка по времени.
+        Index('ix_messages_session_created', 'support_session_id', 'created_at'),
+    )
 
     id = Column(String, primary_key=True)
     support_session_id = Column(String, ForeignKey("support_session.id"), nullable=False)
 
     content = Column(Text, nullable=True)
     created_at_str = Column(String, nullable=True)
+    # Реальный момент времени (мкс) — для детерминированной сортировки истории.
+    # created_at_str имеет точность до секунды → порядок внутри секунды не определён.
+    created_at = Column(TIMESTAMP, server_default=func.now())
     type = Column(Enum(MessageType, native_enum=False), nullable=False)
     role = Column(Enum(MessageRole, native_enum=False), nullable=False)
     assistant_type = Column(Enum(AssistantType, native_enum=False), nullable=True)

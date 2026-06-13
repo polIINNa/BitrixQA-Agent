@@ -95,6 +95,20 @@ async def _update_chat(
         return chat
 
 
+def _compute_next_session_id(chat_id: str, existing_ids: list[str]) -> str:
+    """Следующий id сессии вида <chat_id>_<N+1> по максимальному существующему N."""
+    max_number = 0
+    for sid in existing_ids:
+        if not sid.startswith(f'{chat_id}_'):
+            continue
+        try:
+            n = int(sid.rsplit('_', 1)[-1])
+            max_number = max(max_number, n)
+        except Exception:
+            continue
+    return f"{chat_id}_{max_number + 1}"
+
+
 async def create_support_session(
     chat_id: str,
     assistant_type: AssistantType = AssistantType.ai,
@@ -107,15 +121,7 @@ async def create_support_session(
         async with AsyncSessionLocal() as session:
             # Выбираем максимальный номер сессии для данного чата
             result = await session.execute(select(SupportSession.id).where(SupportSession.chat_id == chat_id))
-            existing_ids = [row[0] for row in result.all() if row[0].startswith(f'{chat_id}_')]
-            max_number = 0
-            for sid in existing_ids:
-                try:
-                    n = int(sid.rsplit('_', 1)[-1])
-                    max_number = max(max_number, n)
-                except Exception:
-                    continue
-            session_id = f"{chat_id}_{max_number + 1}"
+            session_id = _compute_next_session_id(chat_id, [row[0] for row in result.all()])
             support_session = SupportSession(
                 id=session_id,
                 chat_id=chat_id,
@@ -137,6 +143,66 @@ async def create_support_session(
 
     raise RuntimeError(
         f"Не удалось создать сессию для chat_id={chat_id} за {_max_attempts} попыток"
+    )
+
+
+async def switch_session_on_intent_change(
+    old_session_id: str,
+    chat_id: str,
+    message_ids: list[str],
+    _max_attempts: int = 5,
+) -> SupportSession:
+    """Атомарно сменить сессию при смене интента: закрыть старую + создать новую +
+    перенести в неё сообщения залпа — всё в ОДНОЙ транзакции.
+
+    Раньше это были 3+ независимые транзакции (update_session_status + create_support_session
+    + reassign_message×N): сбой посередине оставлял рассинхрон (старая закрыта, а сообщения
+    разъехались по сессиям). Теперь при любом сбое откатывается всё разом. IntegrityError на
+    коллизии id новой сессии → пересчёт и повтор всей транзакции (как в create_support_session).
+    """
+    for attempt in range(_max_attempts):
+        async with AsyncSessionLocal() as session:
+            # Закрыть старую сессию
+            old_session = await session.get(SupportSession, old_session_id)
+            if old_session is not None:
+                old_session.status = SupportStatus.end
+
+            # Создать новую сессию. id вычисляем в той же транзакции; закрытая старая
+            # сессия по-прежнему учитывается в максимуме номера.
+            result = await session.execute(
+                select(SupportSession.id).where(SupportSession.chat_id == chat_id)
+            )
+            new_id = _compute_next_session_id(chat_id, [row[0] for row in result.all()])
+            new_session = SupportSession(
+                id=new_id,
+                chat_id=chat_id,
+                status=SupportStatus.process,
+                assistant_type=AssistantType.ai,
+            )
+            session.add(new_session)
+
+            # Перенести сообщения залпа в новую сессию (bulk UPDATE)
+            if message_ids:
+                await session.execute(
+                    update(Message)
+                    .where(Message.id.in_(message_ids))
+                    .values(support_session_id=new_id)
+                )
+
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                logger.warning(
+                    "Конфликт id при смене интента (попытка %d/%d), повтор транзакции",
+                    attempt + 1, _max_attempts,
+                )
+                continue
+            await session.refresh(new_session)
+            return new_session
+
+    raise RuntimeError(
+        f"Не удалось сменить сессию (intent change) для chat_id={chat_id} за {_max_attempts} попыток"
     )
 
 
@@ -173,18 +239,6 @@ async def get_or_create_active_session(chat_id: str) -> SupportSession:
     return active_session
 
 
-async def update_session_status(session_id: str, *, status: SupportStatus) -> Optional[SupportSession]:
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(SupportSession).where(SupportSession.id == session_id))
-        support_session = result.scalar_one_or_none()
-        if support_session is None:
-            return None
-        support_session.status = status
-        await session.commit()
-        await session.refresh(support_session)
-        return support_session
-
-
 async def update_session_assistant_type(session_id: str, *, assistant_type: AssistantType) -> Optional[SupportSession]:
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(SupportSession).where(SupportSession.id == session_id))
@@ -206,7 +260,7 @@ async def add_message(
     type: MessageType = MessageType.text
 ) -> Message:
     async with AsyncSessionLocal() as session:
-        now_iso = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)  # naive UTC, мкс
         message = Message(
             id=str(uuid.uuid4()),
             support_session_id=support_session_id,
@@ -214,7 +268,8 @@ async def add_message(
             type=type,
             role=role,
             assistant_type=assistant_type,
-            created_at_str=now_iso,
+            created_at_str=now.strftime('%Y-%m-%dT%H:%M:%S'),
+            created_at=now,
         )
         session.add(message)
         await session.commit()
@@ -227,7 +282,7 @@ async def get_all_messages(support_session_id: str) -> list[Message]:
         result = await session.execute(
             select(Message)
             .where(Message.support_session_id == support_session_id)
-            .order_by(asc(Message.created_at_str))
+            .order_by(asc(Message.created_at), asc(Message.id))
         )
         return list(result.scalars().all())
 
@@ -239,26 +294,9 @@ async def get_all_messages_by_chat_id(chat_id: str) -> list[Message]:
             select(Message)
             .join(SupportSession, Message.support_session_id == SupportSession.id)
             .where(SupportSession.chat_id == chat_id)
-            .order_by(asc(Message.created_at_str))
+            .order_by(asc(Message.created_at), asc(Message.id))
         )
         return list(result.scalars().all())
-
-
-async def reassign_message(message_id: str, new_session_id: str) -> Optional[Message]:
-    """Перепривязать сообщение к другой сессии.
-
-    Используется при смене интента: сообщение сохраняется при входе в текущей сессии,
-    а при обнаружении новой темы переносится в созданную новую сессию.
-    """
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Message).where(Message.id == message_id))
-        message = result.scalar_one_or_none()
-        if message is None:
-            return None
-        message.support_session_id = new_session_id
-        await session.commit()
-        await session.refresh(message)
-        return message
 
 
 async def _update_message_content(message_id: str, new_content: str) -> Optional[Message]:

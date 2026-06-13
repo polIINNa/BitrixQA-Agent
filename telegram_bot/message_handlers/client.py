@@ -14,7 +14,6 @@ from telegram_bot.enums import (
     ChatType,
     MessageRole,
     MessageType,
-    SupportStatus,
 )
 from telegram_bot.utils import (
     MediaData,
@@ -144,10 +143,11 @@ async def _process_burst(burst: _Burst, support_session: SupportSession) -> None
     # Смена темы — закрываем сессию, открываем новую, переносим в неё все сообщения залпа
     if qa_response.message_type == "intent_changed":
         logger.info("Обнаружена смена темы, создание новой сессии")
-        await crud.update_session_status(session_id=support_session.id, status=SupportStatus.end)
-        support_session = await crud.create_support_session(chat_id=support_session.chat_id)
-        for _, msg_id in burst.items:
-            await crud.reassign_message(msg_id, support_session.id)
+        support_session = await crud.switch_session_on_intent_change(
+            old_session_id=support_session.id,
+            chat_id=support_session.chat_id,
+            message_ids=[msg_id for _, msg_id in burst.items],
+        )
         qa_response = await qa_service.get_response(
             user_message=combined_text,
             session_id=support_session.id,

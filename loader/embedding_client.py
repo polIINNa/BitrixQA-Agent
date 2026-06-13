@@ -17,6 +17,7 @@ class EmbeddingClient:
             model=config.embedding_model,
             api_key=config.openai_api_key,
             base_url=config.base_url,
+            timeout=60,  # чтобы зависший прокси/OpenRouter не вешал граф и loader
             **({"http_async_client": http_async_client} if http_async_client else {}),
         )
 

@@ -97,31 +97,47 @@ async def _update_chat(
 
 async def create_support_session(
     chat_id: str,
-    assistant_type: AssistantType = AssistantType.ai
+    assistant_type: AssistantType = AssistantType.ai,
+    _max_attempts: int = 5,
 ) -> SupportSession:
-    async with AsyncSessionLocal() as session:
-        # Выбираем максимальный номер сессии для данного чата
-        result = await session.execute(select(SupportSession.id).where(SupportSession.chat_id == chat_id))
-        existing_ids = [row[0] for row in result.all() if row[0].startswith(f'{chat_id}_')]
-        max_number = 0
-        for sid in existing_ids:
+    # id формируется как <chat_id>_<N>. При конкурентной обработке двух сообщений
+    # одного чата два вызова могут вычислить одинаковый N -> дубль PK -> IntegrityError.
+    # Ловим его и пересчитываем номер (а не падаем, как было раньше).
+    for attempt in range(_max_attempts):
+        async with AsyncSessionLocal() as session:
+            # Выбираем максимальный номер сессии для данного чата
+            result = await session.execute(select(SupportSession.id).where(SupportSession.chat_id == chat_id))
+            existing_ids = [row[0] for row in result.all() if row[0].startswith(f'{chat_id}_')]
+            max_number = 0
+            for sid in existing_ids:
+                try:
+                    n = int(sid.rsplit('_', 1)[-1])
+                    max_number = max(max_number, n)
+                except Exception:
+                    continue
+            session_id = f"{chat_id}_{max_number + 1}"
+            support_session = SupportSession(
+                id=session_id,
+                chat_id=chat_id,
+                status=SupportStatus.process,
+                assistant_type=assistant_type
+            )
+            session.add(support_session)
             try:
-                n = int(sid.rsplit('_', 1)[-1])
-                max_number = max(max_number, n)
-            except Exception:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                logger.warning(
+                    "Конфликт id сессии %s (попытка %d/%d), пересчитываю номер",
+                    session_id, attempt + 1, _max_attempts,
+                )
                 continue
-        next_number = max_number + 1
-        session_id = f"{chat_id}_{next_number}"
-        support_session = SupportSession(
-            id=session_id,
-            chat_id=chat_id,
-            status=SupportStatus.process,
-            assistant_type=assistant_type
-        )
-        session.add(support_session)
-        await session.commit()
-        await session.refresh(support_session)
-        return support_session
+            await session.refresh(support_session)
+            return support_session
+
+    raise RuntimeError(
+        f"Не удалось создать сессию для chat_id={chat_id} за {_max_attempts} попыток"
+    )
 
 
 async def get_active_session(chat_id: str) -> SupportSession | None:
@@ -226,6 +242,23 @@ async def get_all_messages_by_chat_id(chat_id: str) -> list[Message]:
             .order_by(asc(Message.created_at_str))
         )
         return list(result.scalars().all())
+
+
+async def reassign_message(message_id: str, new_session_id: str) -> Optional[Message]:
+    """Перепривязать сообщение к другой сессии.
+
+    Используется при смене интента: сообщение сохраняется при входе в текущей сессии,
+    а при обнаружении новой темы переносится в созданную новую сессию.
+    """
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Message).where(Message.id == message_id))
+        message = result.scalar_one_or_none()
+        if message is None:
+            return None
+        message.support_session_id = new_session_id
+        await session.commit()
+        await session.refresh(message)
+        return message
 
 
 async def _update_message_content(message_id: str, new_content: str) -> Optional[Message]:

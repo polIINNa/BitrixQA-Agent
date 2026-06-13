@@ -1,12 +1,13 @@
 """Обработка сообщений от клиентов."""
 import asyncio
 import logging
+from collections import defaultdict
 
 from aiogram import Bot, types
 from aiogram.methods import ReadBusinessMessage
 
 from telegram_bot.database import crud
-from telegram_bot.database.models import SupportSession
+from telegram_bot.database.models import SupportSession, Message
 from telegram_bot.enums import (
     AssistantType,
     ChatType,
@@ -34,6 +35,16 @@ from telegram_bot.services.qa import QAResponse
 from media_recognizer.api import extract_text_from_media
 
 logger = logging.getLogger(__name__)
+
+
+# Блокировки по chat_id: сериализуют обработку сообщений одного чата, чтобы
+# исключить гонки при создании сессии / сохранении истории и гарантировать порядок.
+# Бот — один процесс с одним event loop, поэтому in-process локов достаточно.
+_chat_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+
+def _get_chat_lock(chat_id: str) -> asyncio.Lock:
+    return _chat_locks[chat_id]
 
 
 # =============================================================================
@@ -64,22 +75,63 @@ async def handle_client_message(
     # Отменяем предыдущую задачу напоминания
     chat_flow_service.cancel_followup(chat_id, followup_tasks)
 
-    # Получение или создание сессии
-    support_session = await crud.get_or_create_active_session(chat_id=chat_id)
+    # Сериализуем обработку сообщений одного чата: порядок + защита от гонок
+    async with _get_chat_lock(chat_id):
+        # Получение или создание сессии
+        support_session = await crud.get_or_create_active_session(chat_id=chat_id)
 
-    # Если сессию ведёт специалист — сохраняем сырое сообщение без LLM-обработки
-    if support_session.assistant_type == AssistantType.human:
-        await _save_human_session_message(support_session, message)
-        logger.info("Сессию ведёт специалист, сообщение сохранено")
-        return
+        # Если сессию ведёт специалист — сохраняем сырое сообщение без LLM-обработки
+        if support_session.assistant_type == AssistantType.human:
+            await _save_human_session_message(support_session, message)
+            logger.info("Сессию ведёт специалист, сообщение сохранено")
+            return
 
-    logger.info("Сессию ведёт AI-помощник")
+        logger.info("Сессию ведёт AI-помощник")
 
-    # Обработка медиа-контента (только для AI-сессий)
+        try:
+            await _process_ai_message(
+                chat_type=chat_type,
+                support_session=support_session,
+                bot=bot,
+                message=message,
+                followup_tasks=followup_tasks,
+                operator_id=operator_id,
+                tech_support_account_id=tech_support_account_id,
+            )
+        except Exception:
+            # Любой сбой пайплайна (граф, таймаут LLM/прокси, медиа, отправка) не должен
+            # оставлять клиента без ответа: логируем и переводим на специалиста.
+            logger.exception(
+                "Ошибка обработки сообщения клиента (chat_id=%s), фолбэк на специалиста",
+                chat_id,
+            )
+            # Сессия могла смениться при intent_changed — берём актуальную активную.
+            current_session = await crud.get_active_session(chat_id) or support_session
+            await _switch_to_human_specialist(
+                chat_type=chat_type,
+                support_session=current_session,
+                bot=bot,
+                message=message,
+                operator_id=operator_id,
+                tech_support_account_id=tech_support_account_id,
+            )
+
+
+async def _process_ai_message(
+    chat_type: ChatType,
+    support_session: SupportSession,
+    bot: Bot,
+    message: types.Message,
+    followup_tasks: dict[str, asyncio.Task],
+    operator_id: str,
+    tech_support_account_id: str | None = None,
+) -> None:
+    """Обработать сообщение в AI-режиме: медиа → сохранение → граф → ответ."""
+    # Обработка медиа-контента
     media_data = await _extract_message_content(message, bot)
     message_text_content = media_data["text_content"]
 
-    # Если невозможно распознать текст сообщения
+    # Если невозможно распознать текст сообщения — на специалиста
     if message_text_content is None:
         logger.info("Невозможно извлечь текст из сообщения")
         await _handle_unrecognized_message(
@@ -93,39 +145,39 @@ async def handle_client_message(
         )
         return
 
-    # Получаем ответ от QA агента (до сохранения, чтобы история была чистой)
+    # Сохраняем сообщение клиента сразу при входе, чтобы оно не терялось при падении
+    # графа. В граф оно передаётся отдельно (last_user_message), поэтому из chat_history
+    # исключается по id.
+    saved_message = await _save_user_message(support_session, message_text_content, media_data)
+
     # Внутри графа первым шагом идёт проверка смены интента
     qa_response = await qa_service.get_response(
         user_message=message_text_content,
         session_id=support_session.id,
+        exclude_message_id=saved_message.id,
     )
 
-    # Если интент изменился — закрываем текущую сессию и открываем новую
+    # Если интент изменился — закрываем текущую сессию, открываем новую и переносим
+    # в неё уже сохранённое сообщение, затем получаем ответ заново
     if qa_response.message_type == "intent_changed":
         logger.info("Обнаружена смена темы, создание новой сессии")
         await crud.update_session_status(session_id=support_session.id, status=SupportStatus.end)
         support_session = await crud.create_support_session(chat_id=support_session.chat_id)
-        # Сохраняем сообщение в новой сессии и получаем ответ заново
-        await _save_user_message(support_session, message_text_content, media_data)
+        await crud.reassign_message(saved_message.id, support_session.id)
         qa_response = await qa_service.get_response(
             user_message=message_text_content,
             session_id=support_session.id,
+            exclude_message_id=saved_message.id,
         )
-    else:
-        # Сохраняем сообщение в текущей сессии
-        await _save_user_message(support_session, message_text_content, media_data)
 
-    # Автоответ (только для личных сообщений)
+    # Автоответ + отметка о прочтении (только для личных сообщений)
     if chat_type == ChatType.PRIVATE:
         await _send_auto_reply_if_needed(bot, message, support_session)
-
-    # Отметка о прочтении (только для личных сообщений)
-    if chat_type == ChatType.PRIVATE:
         await bot(
             ReadBusinessMessage(
                 business_connection_id=message.business_connection_id,
                 chat_id=int(support_session.chat_id),
-                message_id=message.message_id
+                message_id=message.message_id,
             )
         )
 
@@ -385,12 +437,12 @@ async def _save_user_message(
     support_session: SupportSession,
     message_text_content: str | None = None,
     media_data: MediaData | None = None,
-) -> None:
-    """Сохранить сообщение клиента в БД (одна запись)."""
+) -> Message:
+    """Сохранить сообщение клиента в БД (одна запись) и вернуть его."""
     media_type_str = media_data["media_type"] if media_data else None
     msg_type = content_type_to_message_type(media_type_str)
 
-    await crud.add_message(
+    return await crud.add_message(
         support_session_id=support_session.id,
         content=message_text_content,
         role=MessageRole.user,

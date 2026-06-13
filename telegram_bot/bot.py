@@ -7,11 +7,13 @@ from aiogram.enums import ParseMode
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.types import BotCommand, BotCommandScopeDefault
+from aiogram.types import BotCommand, BotCommandScopeDefault, ErrorEvent
 
 from telegram_bot.routers import specialist_router, private_router, group_router
 from telegram_bot.config import get_config
 
+
+logger = logging.getLogger(__name__)
 
 config = get_config()
 
@@ -24,6 +26,19 @@ followup_tasks: dict[str, asyncio.Task] = {}
 dp.include_router(specialist_router)
 dp.include_router(private_router)
 dp.include_router(group_router)
+
+
+async def on_unhandled_error(event: ErrorEvent) -> bool:
+    """Последний рубеж: ни одно исключение в обработке апдейта не должно теряться молча.
+
+    Основной фолбэк (перевод на специалиста) живёт в обработчике клиента; сюда долетает
+    то, что не поймано там (команды специалиста, групповая маршрутизация, неожиданное).
+    """
+    logger.error("Необработанная ошибка при обработке апдейта", exc_info=event.exception)
+    return True
+
+
+dp.errors.register(on_unhandled_error)
 
 session = AiohttpSession(proxy=config.proxy_url) if config.proxy_url else None
 

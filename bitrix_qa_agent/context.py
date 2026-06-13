@@ -9,6 +9,13 @@ from loader.embedding_client import EmbeddingClient
 from loader.database.connection import AsyncSessionLocal
 
 
+# Таймаут на запрос к LLM (сек): чтобы зависший прокси/OpenRouter не блокировал
+# хендлер бесконечно. max_tokens — потолок против runaway-генерации (заведомо выше
+# любого ожидаемого ответа поддержки, чтобы не обрезать реальные ответы).
+MODEL_REQUEST_TIMEOUT = 60
+MODEL_MAX_TOKENS = 2048
+
+
 class ChatModel(BaseModel):
     """LLM модель с возможностью чата"""
     provider: str = Field(description='Провайдер модели (openai, gigachat, ...)')
@@ -32,7 +39,9 @@ class BitrixQAContext(BaseModel):
             provider="openai",
             model="google/gemini-2.5-flash-lite",
             kwargs={
-                "temperature": 0
+                "temperature": 0,
+                "timeout": MODEL_REQUEST_TIMEOUT,
+                "max_tokens": MODEL_MAX_TOKENS,
             }
         ).chat_model)
     pro_model: BaseChatModel = Field(
@@ -41,7 +50,9 @@ class BitrixQAContext(BaseModel):
             provider="openai",
             model="google/gemini-2.5-flash",
             kwargs={
-                "temperature": 0
+                "temperature": 0,
+                "timeout": MODEL_REQUEST_TIMEOUT,
+                "max_tokens": MODEL_MAX_TOKENS,
             }
         ).chat_model)
     embedding_client: EmbeddingClient = Field(

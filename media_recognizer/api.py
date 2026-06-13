@@ -1,6 +1,6 @@
 """Публичный API для распознавания медиа-контента."""
 from media_recognizer.utils import encode_image
-from media_recognizer.context import MediaRecognizerContext
+from media_recognizer.context import get_media_recognizer_context
 from media_recognizer.chains import identify_problem_from_img_chain, image_caption_summarize_chain
 
 
@@ -18,7 +18,7 @@ async def identify_problem_from_image(
     Returns:
         Описание проблемы пользователя
     """
-    context = MediaRecognizerContext()
+    context = get_media_recognizer_context()
     image_url = encode_image(img_bytes)
     
     problem_from_img = (

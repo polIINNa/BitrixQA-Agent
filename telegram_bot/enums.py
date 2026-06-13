@@ -34,3 +34,10 @@ class AssistantType(str, enum.Enum):
     ai = "ai"
     human = "human"
 
+
+class FollowupStatus(str, enum.Enum):
+    """Статус отложенного напоминания (follow-up)."""
+    pending = "pending"      # запланировано, ждёт времени отправки
+    sent = "sent"            # отправлено (или заявлено sweep'ом к отправке)
+    cancelled = "cancelled"  # отменено (клиент ответил раньше)
+

@@ -11,6 +11,7 @@ from aiogram.types import BotCommand, BotCommandScopeDefault, ErrorEvent
 
 from telegram_bot.routers import specialist_router, private_router, group_router
 from telegram_bot.config import get_config
+from telegram_bot.services import chat_flow
 
 
 logger = logging.getLogger(__name__)
@@ -18,9 +19,6 @@ logger = logging.getLogger(__name__)
 config = get_config()
 
 dp = Dispatcher()
-
-# Хранилище задач для отложенных сообщений (напоминаний)
-followup_tasks: dict[str, asyncio.Task] = {}
 
 # Регистрируем роутеры
 dp.include_router(specialist_router)
@@ -69,8 +67,9 @@ async def main():
     # Регистрируем команды при запуске
     await set_bot_commands(bot)
 
-    # Передаём followup_tasks через workflow_data диспетчера
-    dp.workflow_data["followup_tasks"] = followup_tasks
+    # Фоновый цикл досылки персистентных напоминаний (follow-up)
+    asyncio.create_task(chat_flow.run_followup_sweep(bot))
+
     await dp.start_polling(bot)
 
 

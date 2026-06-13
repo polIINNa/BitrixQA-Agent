@@ -66,7 +66,6 @@ class _Burst:
     """Накопленный «залп» сообщений одного чата до обработки."""
     chat_type: ChatType
     bot: Bot
-    followup_tasks: dict
     operator_id: str
     tech_support_account_id: str | None
     last_message: types.Message
@@ -168,7 +167,6 @@ async def _process_burst(burst: _Burst, support_session: SupportSession) -> None
         message=burst.last_message,
         operator_id=burst.operator_id,
         tech_support_account_id=burst.tech_support_account_id,
-        followup_tasks=burst.followup_tasks,
     )
 
 
@@ -181,7 +179,6 @@ async def handle_client_message(
     chat_id: str,
     bot: Bot,
     message: types.Message,
-    followup_tasks: dict[str, asyncio.Task],
     operator_id: str,
     tech_support_account_id: str | None = None,
 ) -> None:
@@ -193,12 +190,11 @@ async def handle_client_message(
         chat_id: идентификатор чата
         bot: Telegram бот
         message: Telegram сообщение
-        followup_tasks: задачи для отправки сообщения с напоминанием
         operator_id: id оператора для пересылки сообщений
         tech_support_account_id: id аккаунта поддержки (для личных сообщений)
     """
-    # Отменяем предыдущую задачу напоминания
-    chat_flow_service.cancel_followup(chat_id, followup_tasks)
+    # Отменяем ожидающее напоминание (клиент прислал новое сообщение)
+    await chat_flow_service.cancel_followup(chat_id)
 
     # Сериализуем обработку сообщений одного чата: порядок + защита от гонок
     async with _get_chat_lock(chat_id):
@@ -220,7 +216,6 @@ async def handle_client_message(
                 support_session=support_session,
                 bot=bot,
                 message=message,
-                followup_tasks=followup_tasks,
                 operator_id=operator_id,
                 tech_support_account_id=tech_support_account_id,
             )
@@ -250,7 +245,6 @@ async def _enqueue_ai_message(
     support_session: SupportSession,
     bot: Bot,
     message: types.Message,
-    followup_tasks: dict[str, asyncio.Task],
     operator_id: str,
     tech_support_account_id: str | None = None,
 ) -> None:
@@ -296,7 +290,6 @@ async def _enqueue_ai_message(
         burst = _Burst(
             chat_type=chat_type,
             bot=bot,
-            followup_tasks=followup_tasks,
             operator_id=operator_id,
             tech_support_account_id=tech_support_account_id,
             last_message=message,
@@ -367,7 +360,6 @@ async def _handle_qa_response(
     bot: Bot,
     message: types.Message,
     operator_id: str,
-    followup_tasks: dict,
     tech_support_account_id: str | None = None,
 ) -> None:
     """Обработка результата QA агента."""
@@ -406,7 +398,6 @@ async def _handle_qa_response(
             support_session=support_session,
             answer=qa_response.answer,
             message=message,
-            followup_tasks=followup_tasks,
         )
 
 
@@ -512,7 +503,6 @@ async def _send_ai_answer(
     chat_type: ChatType,
     message: types.Message,
     answer: str,
-    followup_tasks: dict[str, asyncio.Task]
 ) -> None:
     """Отправить ответ AI и запланировать напоминание."""
     chat_id = support_session.chat_id
@@ -534,12 +524,9 @@ async def _send_ai_answer(
         await message.reply(text=answer)
 
     await chat_flow_service.schedule_followup(
+        support_session=support_session,
         chat_type=chat_type,
         message=message,
-        support_session_id=support_session.id,
-        followup_tasks=followup_tasks,
-        bot=bot,
-        chat_id=chat_id,
     )
 
 

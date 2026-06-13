@@ -1,5 +1,4 @@
 """Роутер для бизнес-сообщений (личные чаты через бизнес-аккаунт)."""
-import asyncio
 import logging
 
 from aiogram import Bot, types, Router
@@ -23,7 +22,6 @@ private_router = Router(name="private")
 async def handle_business_message(
     message: types.Message,
     bot: Bot,
-    followup_tasks: dict[str, asyncio.Task],
 ):
     """Обработка сообщений в бизнес-аккаунте."""
     chat_id = get_chat_id(message, ChatType.PRIVATE)
@@ -44,7 +42,6 @@ async def handle_business_message(
             chat_id=chat_id,
             bot=bot,
             message=message,
-            followup_tasks=followup_tasks,
             operator_id=config.operator_id,
             tech_support_account_id=config.tech_support_account_id,
         )

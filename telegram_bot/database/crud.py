@@ -3,12 +3,12 @@ import logging
 import datetime
 from typing import Optional
 
-from sqlalchemy import select, asc, func, and_
+from sqlalchemy import select, asc, func, and_, update
 from sqlalchemy.exc import IntegrityError
 
 from telegram_bot.database.base import AsyncSessionLocal
-from telegram_bot.database.models import Chat, SupportSession, Message
-from telegram_bot.enums import SupportStatus, MessageType, MessageRole, AssistantType, ChatType
+from telegram_bot.database.models import Chat, SupportSession, Message, Followup
+from telegram_bot.enums import SupportStatus, MessageType, MessageRole, AssistantType, ChatType, FollowupStatus
 
 logger = logging.getLogger(__name__)
 
@@ -315,3 +315,82 @@ async def get_all_chats_with_latest_sessions() -> list[tuple[Chat, SupportSessio
             .order_by(Chat.username)
         )
         return [(row.Chat, row.SupportSession) for row in result]
+
+
+async def get_support_session(session_id: str) -> SupportSession | None:
+    """Получить сессию по id (нужно sweep'у для проверки статуса перед отправкой follow-up)."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(SupportSession).where(SupportSession.id == session_id))
+        return result.scalar_one_or_none()
+
+
+# ---------------------------------------------------------------------------
+# Follow-up (персистентные напоминания)
+# ---------------------------------------------------------------------------
+
+async def create_followup(
+    support_session_id: str,
+    chat_id: str,
+    send_chat_id: str,
+    text: str,
+    scheduled_at: datetime.datetime,
+    business_connection_id: str | None = None,
+    reply_to_message_id: int | None = None,
+) -> Followup:
+    """Создать запланированный follow-up (status=pending)."""
+    async with AsyncSessionLocal() as session:
+        followup = Followup(
+            id=str(uuid.uuid4()),
+            support_session_id=support_session_id,
+            chat_id=chat_id,
+            send_chat_id=send_chat_id,
+            business_connection_id=business_connection_id,
+            reply_to_message_id=reply_to_message_id,
+            text=text,
+            scheduled_at=scheduled_at,
+            status=FollowupStatus.pending,
+        )
+        session.add(followup)
+        await session.commit()
+        await session.refresh(followup)
+        return followup
+
+
+async def cancel_pending_followups(chat_id: str) -> int:
+    """Отменить все ожидающие follow-up для чата (клиент ответил / пришло новое сообщение).
+
+    Возвращает число отменённых записей.
+    """
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            update(Followup)
+            .where(Followup.chat_id == chat_id, Followup.status == FollowupStatus.pending)
+            .values(status=FollowupStatus.cancelled)
+        )
+        await session.commit()
+        return result.rowcount or 0
+
+
+async def claim_due_followups(now: datetime.datetime) -> list[dict]:
+    """Атомарно «забрать» наступившие follow-up: pending и scheduled_at<=now -> sent.
+
+    Возвращает данные забранных записей (list[dict]). Атомарность через UPDATE ... RETURNING
+    исключает гонку с отменой (cancel_pending_followups): кто первый перевёл строку из
+    pending — тот и выиграл, второй UPDATE её уже не зацепит.
+    """
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            update(Followup)
+            .where(Followup.status == FollowupStatus.pending, Followup.scheduled_at <= now)
+            .values(status=FollowupStatus.sent)
+            .returning(
+                Followup.id,
+                Followup.support_session_id,
+                Followup.send_chat_id,
+                Followup.business_connection_id,
+                Followup.reply_to_message_id,
+                Followup.text,
+            )
+        )
+        await session.commit()
+        return [dict(row) for row in result.mappings().all()]

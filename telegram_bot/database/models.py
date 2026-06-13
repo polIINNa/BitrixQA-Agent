@@ -5,7 +5,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from telegram_bot.database.config import Base
-from telegram_bot.enums import SupportStatus, MessageType, MessageRole, AssistantType, ChatType
+from telegram_bot.enums import SupportStatus, MessageType, MessageRole, AssistantType, ChatType, FollowupStatus
 
 
 class Chat(Base):
@@ -47,3 +47,25 @@ class Message(Base):
     assistant_type = Column(Enum(AssistantType, native_enum=False), nullable=True)
 
     session = relationship("SupportSession", back_populates="messages")
+
+
+class Followup(Base):
+    """Отложенное напоминание клиенту ("всё ли понятно?").
+
+    Раньше жило только в памяти (asyncio.Task) и терялось при рестарте.
+    Теперь персистентно: фоновый sweep досылает наступившие записи.
+    """
+    __tablename__ = "followups"
+
+    id = Column(String, primary_key=True)
+    support_session_id = Column(String, ForeignKey("support_session.id"), nullable=False)
+
+    chat_id = Column(String, nullable=False, index=True)        # системный chat_id (для отмены)
+    send_chat_id = Column(String, nullable=False)               # telegram chat id для отправки
+    business_connection_id = Column(String, nullable=True)      # для личных (бизнес) сообщений
+    reply_to_message_id = Column(Integer, nullable=True)        # для ответа в группе
+    text = Column(Text, nullable=False)
+
+    scheduled_at = Column(TIMESTAMP, nullable=False, index=True)
+    status = Column(Enum(FollowupStatus, native_enum=False), default=FollowupStatus.pending, nullable=False)
+    created_at = Column(TIMESTAMP, server_default=func.now())

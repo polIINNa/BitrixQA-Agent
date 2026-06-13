@@ -9,7 +9,7 @@ from alembic import context
 
 # Импортируем наши модели и конфигурацию
 from telegram_bot.database.config import Base, DB_URL
-from telegram_bot.database.models import Chat, SupportSession, Message  # noqa: F401
+from telegram_bot.database.models import Chat, SupportSession, Message, Followup  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

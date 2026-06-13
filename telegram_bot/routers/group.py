@@ -1,5 +1,4 @@
 """Роутер для групповых сообщений."""
-import asyncio
 import logging
 
 from aiogram import Bot, types, Router, F
@@ -23,11 +22,10 @@ group_router = Router(name="group")
 async def handle_group_message(
     message: types.Message,
     bot: Bot,
-    followup_tasks: dict[str, asyncio.Task],
 ):
     """Обработка сообщений в группе."""
     # Проверка упоминания бота
-    if await _handle_bot_mention(message, bot, followup_tasks):
+    if await _handle_bot_mention(message, bot):
         return
 
     # Обработка ответа специалиста
@@ -35,13 +33,12 @@ async def handle_group_message(
         return
 
     # Обработка ответа клиента на сообщение специалиста
-    await _handle_client_reply_to_specialist(message, bot, followup_tasks)
+    await _handle_client_reply_to_specialist(message, bot)
 
 
 async def _handle_bot_mention(
     message: types.Message,
     bot: Bot,
-    followup_tasks: dict[str, asyncio.Task],
 ) -> bool:
     """Обработка упоминания бота в сообщении. Возвращает True если обработано."""
     if not message.entities:
@@ -65,7 +62,6 @@ async def _handle_bot_mention(
                 chat_id=chat_id,
                 bot=bot,
                 message=message,
-                followup_tasks=followup_tasks,
                 operator_id=config.operator_id,
             )
             return True
@@ -91,7 +87,6 @@ async def _handle_specialist_reply(message: types.Message) -> bool:
 async def _handle_client_reply_to_specialist(
     message: types.Message,
     bot: Bot,
-    followup_tasks: dict[str, asyncio.Task],
 ) -> None:
     """Обработка ответа клиента на сообщение специалиста."""
     is_client = str(message.from_user.id) != config.operator_id
@@ -114,6 +109,5 @@ async def _handle_client_reply_to_specialist(
             chat_id=chat_id,
             bot=bot,
             message=message,
-            followup_tasks=followup_tasks,
             operator_id=config.operator_id,
         )
